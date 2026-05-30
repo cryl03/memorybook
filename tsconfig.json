@@ -1,0 +1,26 @@
+{
+  "extends": "@react-native/typescript-config/tsconfig.json",
+  "include": [
+    "**/*.ts",
+    "**/*.tsx",
+    "src/**/*",
+    "types/**/*"
+  ],
+  "exclude": [
+    "**/node_modules",
+    "**/Pods"
+  ],
+  "compilerOptions": {
+    "baseUrl": "./src",
+    "paths": {
+      "@assets/*": ["core/assets/*"],
+      "@core/*": ["core/*"],
+      "@features/*": ["features/*"],
+      "@shared/*": ["shared/*"]
+    },
+    "typeRoots": [
+      "./node_modules/@types",
+      "./src/types"
+    ]
+  }
+}
