@@ -1,5 +1,5 @@
 import React, { useEffect } from 'react';
-import { View, Text, StyleSheet, StatusBar, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, StatusBar, Dimensions, Image } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Animated, {
   useSharedValue,
@@ -10,6 +10,7 @@ import Animated, {
   Easing,
   interpolate,
 } from 'react-native-reanimated';
+import { icons } from '@core/assets/icons';
 import { colors, typography, spacing } from '@core/theme';
 
 const { width, height } = Dimensions.get('window');
@@ -122,11 +123,19 @@ export function SplashScreen({ onFinish }: SplashScreenProps) {
           <View style={styles.buttonsRow}>
             <View style={styles.outlineButton}>
               <Text style={styles.outlineButtonText}>Crear mi álbum</Text>
-              <Text style={styles.outlineButtonIcon}> 📖</Text>
+              <Image
+                source={icons.book}
+                style={{ width: 14, height: 14, marginLeft: 4, tintColor: colors.text.primary }}
+                resizeMode="contain"
+              />
             </View>
             <View style={styles.darkButton}>
               <Text style={styles.darkButtonText}>Inicio</Text>
-              <Text style={styles.darkButtonIcon}> 🔍</Text>
+              <Image
+                source={icons.search}
+                style={{ width: 14, height: 14, marginLeft: 4, tintColor: colors.text.inverse }}
+                resizeMode="contain"
+              />
             </View>
           </View>
         </Animated.View>

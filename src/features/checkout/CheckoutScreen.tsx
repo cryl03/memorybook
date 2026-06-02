@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
 
@@ -67,7 +67,11 @@ export function CheckoutScreen({
             <Text style={styles.shippingText}>
               {shipping === 'estandar' ? 'Estándar' : 'Express'}
             </Text>
-            <Icon name="chevron-down" size={14} color={colors.text.secondary} />
+            <Image
+              source={icons['arrow-down']}
+              style={{ width: 14, height: 14, tintColor: colors.text.secondary }}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
         </View>
       </View>
@@ -77,7 +81,7 @@ export function CheckoutScreen({
         <Button
           title={`Volver a pedir · $${total}`}
           onPress={onConfirm}
-          icon="shopping-bag"
+          icon="badge"
         />
       </View>
     </View>

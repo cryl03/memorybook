@@ -8,8 +8,9 @@ import {
   TextInput,
   FlatList,
   Dimensions,
+  Image,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
+import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
 
@@ -97,7 +98,11 @@ export function EditorScreen({
             onPress={() => setIsEditingTitle(true)}
             style={styles.titleRow}>
             <Text style={styles.title}>{title}</Text>
-            <Icon name="edit-2" size={16} color={colors.text.secondary} />
+            <Image
+              source={icons.new}
+              style={{ width: 16, height: 16, tintColor: colors.text.secondary }}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
         )}
         <View style={styles.metaRow}>
@@ -141,15 +146,19 @@ export function EditorScreen({
         {activeTab === 'fotos' ? renderPhotosTab() : renderTextosTab()}
       </ScrollView>
 
-      {/* Page navigation */}
       <View style={styles.pageNav}>
         <TouchableOpacity
           onPress={() => setCurrentPage(Math.max(0, currentPage - 1))}
           disabled={currentPage === 0}>
-          <Icon
-            name="chevron-left"
-            size={20}
-            color={currentPage === 0 ? colors.text.tertiary : colors.text.primary}
+          <Image
+            source={icons['arrow-right']}
+            style={{
+              width: 20,
+              height: 20,
+              tintColor: currentPage === 0 ? colors.text.tertiary : colors.text.primary,
+              transform: [{ rotate: '180deg' }],
+            }}
+            resizeMode="contain"
           />
         </TouchableOpacity>
         <Text style={styles.pageIndicator}>
@@ -158,14 +167,14 @@ export function EditorScreen({
         <TouchableOpacity
           onPress={() => setCurrentPage(Math.min(pageCount - 1, currentPage + 1))}
           disabled={currentPage === pageCount - 1}>
-          <Icon
-            name="chevron-right"
-            size={20}
-            color={
-              currentPage === pageCount - 1
-                ? colors.text.tertiary
-                : colors.text.primary
-            }
+          <Image
+            source={icons['arrow-right']}
+            style={{
+              width: 20,
+              height: 20,
+              tintColor: currentPage === pageCount - 1 ? colors.text.tertiary : colors.text.primary,
+            }}
+            resizeMode="contain"
           />
         </TouchableOpacity>
       </View>
@@ -175,7 +184,7 @@ export function EditorScreen({
         <Button
           title="Llévalo contigo · $300"
           onPress={onBuy}
-          icon="shopping-bag"
+          icon="badge"
           style={styles.buyButton}
         />
         <TouchableOpacity style={styles.saveBtn} onPress={onSave}>

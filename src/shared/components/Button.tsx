@@ -6,8 +6,10 @@ import {
   ViewStyle,
   TextStyle,
   ActivityIndicator,
+  Image,
+  ImageSourcePropType,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
+import { icons } from '@core/assets/icons';
 import { colors } from '@core/theme';
 import { typography } from '@core/theme';
 import { borderRadius, spacing } from '@core/theme';
@@ -20,7 +22,7 @@ interface ButtonProps {
   onPress: () => void;
   variant?: ButtonVariant;
   size?: ButtonSize;
-  icon?: string;
+  icon?: keyof typeof icons;
   iconPosition?: 'left' | 'right';
   disabled?: boolean;
   loading?: boolean;
@@ -73,11 +75,19 @@ export function Button({
       ) : (
         <>
           {icon && iconPosition === 'left' && (
-            <Icon name={icon} size={18} color={iconColor} style={styles.iconLeft} />
+            <Image
+              source={icons[icon]}
+              style={[styles.iconLeft, { width: 18, height: 18, tintColor: iconColor }]}
+              resizeMode="contain"
+            />
           )}
           <Text style={textStyles}>{title}</Text>
           {icon && iconPosition === 'right' && (
-            <Icon name={icon} size={18} color={iconColor} style={styles.iconRight} />
+            <Image
+              source={icons[icon]}
+              style={[styles.iconRight, { width: 18, height: 18, tintColor: iconColor }]}
+              resizeMode="contain"
+            />
           )}
         </>
       )}

@@ -1,6 +1,5 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, FlatList } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 
 interface OrdersScreenProps {

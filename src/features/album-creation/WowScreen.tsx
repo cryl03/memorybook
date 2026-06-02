@@ -1,6 +1,6 @@
 import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
+import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
 
@@ -43,11 +43,19 @@ export function WowScreen({
       {/* Page navigation */}
       <View style={styles.pageNav}>
         <TouchableOpacity style={styles.navArrow}>
-          <Icon name="chevron-left" size={20} color={colors.text.secondary} />
+          <Image
+            source={icons['arrow-right']}
+            style={{ width: 20, height: 20, tintColor: colors.text.secondary, transform: [{ rotate: '180deg' }] }}
+            resizeMode="contain"
+          />
         </TouchableOpacity>
         <Text style={styles.pageIndicator}>1 de {pageCount}</Text>
         <TouchableOpacity style={styles.navArrow}>
-          <Icon name="chevron-right" size={20} color={colors.text.secondary} />
+          <Image
+            source={icons['arrow-right']}
+            style={{ width: 20, height: 20, tintColor: colors.text.secondary }}
+            resizeMode="contain"
+          />
         </TouchableOpacity>
       </View>
 
@@ -57,7 +65,7 @@ export function WowScreen({
           <Button
             title="Llévalo contigo · $300"
             onPress={onBuy}
-            icon="shopping-bag"
+            icon="badge"
             style={styles.buyButton}
           />
           <TouchableOpacity style={styles.saveButton} onPress={() => {}}>

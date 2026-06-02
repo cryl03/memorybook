@@ -6,8 +6,9 @@ import {
   FlatList,
   TouchableOpacity,
   Dimensions,
+  Image,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
+import { icons } from '@core/assets/icons';
 import { colors, typography, spacing } from '@core/theme';
 
 const { width } = Dimensions.get('window');
@@ -75,7 +76,7 @@ export function PhotoSelectorScreen({
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onClose} style={styles.closeButton}>
-          <Icon name="x" size={24} color={colors.text.primary} />
+          <Text style={{ fontSize: 24, color: colors.text.primary }}>✕</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>Tu nuevo álbum</Text>
         <TouchableOpacity
@@ -94,7 +95,11 @@ export function PhotoSelectorScreen({
       {/* Album selector */}
       <TouchableOpacity style={styles.albumSelector}>
         <Text style={styles.albumName}>Recientes</Text>
-        <Icon name="chevron-right" size={16} color={colors.text.secondary} />
+        <Image
+          source={icons['arrow-right']}
+          style={{ width: 16, height: 16, tintColor: colors.text.secondary }}
+          resizeMode="contain"
+        />
       </TouchableOpacity>
 
       {/* Counter */}

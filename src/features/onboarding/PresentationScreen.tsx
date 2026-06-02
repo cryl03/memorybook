@@ -24,6 +24,7 @@ import Animated, {
   SlideInRight,
 } from 'react-native-reanimated';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
+import { icons } from '@core/assets/icons';
 import { slideImages } from '@core/assets/images';
 
 const { width, height } = Dimensions.get('window');
@@ -53,7 +54,9 @@ const slides: Slide[] = [
     image: slideImages.slide2,
     textParts: [
       { text: 'Tus fotos convertidas\nen una ' },
-      { text: 'historia\ncuidadosamente\ndiseñada para ti', highlight: true },
+      { text: 'historia\n', highlight: true },
+      { text: 'cuidadosamente\n' },
+      { text: 'diseñada para ti', highlight: true },
     ],
   },
   {
@@ -61,8 +64,8 @@ const slides: Slide[] = [
     image: slideImages.slide3,
     textParts: [
       { text: 'Un ' },
-      { text: 'libro', highlight: true },
-      { text: ' que puedes\ntocar, guardar y ' },
+      { text: 'libro que puedes', highlight: true },
+      { text: ' \ntocar, guardar y ' },
       { text: 'volver\na sentir', highlight: true },
     ],
   },
@@ -122,17 +125,18 @@ export function PresentationScreen({ onNext, onLogin }: PresentationScreenProps)
 
   const renderSlide = ({ item, index }: { item: Slide; index: number }) => (
     <View style={styles.slide}>
-      {/* Image — top portion with rounded bottom corners */}
+      {/* Full-bleed image with fade to white */}
       <View style={styles.imageContainer}>
         <Image source={item.image} style={styles.image} resizeMode="cover" />
-        {/* Subtle overlay gradient at bottom of image */}
+        {/* Gradient fade from image to white */}
         <LinearGradient
-          colors={['transparent', 'rgba(255,255,255,0.3)']}
+          colors={['transparent', 'rgba(255,255,255,0.4)', 'rgba(255,255,255,0.85)', '#FFFFFF']}
+          locations={[0, 0.3, 0.65, 1]}
           style={styles.imageOverlay}
         />
       </View>
 
-      {/* Text content — below image */}
+      {/* Text overlapping the fade area */}
       <Animated.View style={[styles.textContainer, textAnimatedStyle]}>
         <Text style={styles.slideTitle}>
           {item.textParts.map((part, idx) =>
@@ -151,13 +155,6 @@ export function PresentationScreen({ onNext, onLogin }: PresentationScreenProps)
 
   return (
     <View style={styles.container}>
-      {/* Background gradient — light blue to white */}
-      <LinearGradient
-        colors={['#E8F0F8', '#F0F6FB', '#FAFCFE', '#FFFFFF']}
-        locations={[0, 0.3, 0.6, 1]}
-        style={StyleSheet.absoluteFill}
-      />
-
       <FlatList
         ref={flatListRef}
         data={slides}
@@ -201,7 +198,11 @@ export function PresentationScreen({ onNext, onLogin }: PresentationScreenProps)
             onPress={onNext}
             activeOpacity={0.8}>
             <Text style={styles.createButtonText}>Crear</Text>
-            <Text style={styles.createButtonIcon}> ✏️</Text>
+            <Image
+              source={icons.new}
+              style={{ width: 14, height: 14, marginLeft: 4, tintColor: colors.text.inverse }}
+              resizeMode="contain"
+            />
           </TouchableOpacity>
         </View>
 
@@ -227,18 +228,12 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   imageContainer: {
-    height: height * 0.45,
-    width: width - spacing['3xl'] * 2,
-    marginHorizontal: spacing['3xl'],
-    marginTop: spacing['5xl'],
-    borderRadius: borderRadius['2xl'],
-    overflow: 'hidden',
-    // Shadow for depth
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.12,
-    shadowRadius: 16,
-    elevation: 8,
+    height: height * 0.65,
+    width: width,
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
   },
   image: {
     width: '100%',
@@ -249,13 +244,15 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    height: 60,
+    height: height * 0.35,
   },
   textContainer: {
-    flex: 1,
+    position: 'absolute',
+    bottom: height * 0.25,
+    left: 0,
+    right: 0,
     paddingHorizontal: spacing['3xl'],
-    paddingTop: spacing['2xl'],
-    justifyContent: 'flex-start',
+    paddingBottom: spacing.xl,
   },
   slideTitle: {
     fontSize: typography.sizes['3xl'],

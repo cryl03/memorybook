@@ -6,8 +6,9 @@ import {
   TouchableOpacity,
   Switch,
   ScrollView,
+  Image,
 } from 'react-native';
-import Icon from 'react-native-vector-icons/Feather';
+import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 
 interface ProfileScreenProps {
@@ -62,20 +63,24 @@ export function ProfileScreen({
           onPress={() => {}}
         />
         <MenuItem
-          icon="shopping-bag"
+          icon="badge"
           label="Mis compras"
           value="8"
           onPress={onNavigateOrders}
         />
         <MenuItem
-          icon="bookmark"
+          icon="book"
           label="Mis proyectos"
           value="5"
           onPress={onNavigateProjects}
         />
         <View style={styles.menuItem}>
           <View style={styles.menuItemLeft}>
-            <Icon name="bell" size={18} color={colors.text.secondary} />
+            <Image
+              source={icons.check}
+              style={{ width: 18, height: 18, tintColor: colors.text.secondary }}
+              resizeMode="contain"
+            />
             <Text style={styles.menuItemLabel}>Notificaciones</Text>
           </View>
           <Switch
@@ -96,7 +101,7 @@ function MenuItem({
   value,
   onPress,
 }: {
-  icon: string;
+  icon: keyof typeof icons;
   label: string;
   value: string;
   onPress: () => void;
@@ -104,12 +109,20 @@ function MenuItem({
   return (
     <TouchableOpacity style={styles.menuItem} onPress={onPress}>
       <View style={styles.menuItemLeft}>
-        <Icon name={icon} size={18} color={colors.text.secondary} />
+        <Image
+          source={icons[icon]}
+          style={{ width: 18, height: 18, tintColor: colors.text.secondary }}
+          resizeMode="contain"
+        />
         <Text style={styles.menuItemLabel}>{label}</Text>
       </View>
       <View style={styles.menuItemRight}>
         <Text style={styles.menuItemValue}>{value}</Text>
-        <Icon name="chevron-right" size={16} color={colors.text.tertiary} />
+        <Image
+          source={icons['arrow-right']}
+          style={{ width: 16, height: 16, tintColor: colors.text.tertiary }}
+          resizeMode="contain"
+        />
       </View>
     </TouchableOpacity>
   );

@@ -63,7 +63,7 @@ export function PhotoCountScreen({ onSelect }: PhotoCountScreenProps) {
           <Button
             title={`Continuar con ${selected} fotos`}
             onPress={() => onSelect(selected)}
-            icon="chevron-right"
+            icon="arrow-right"
           />
         </View>
       </View>
