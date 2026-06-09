@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   Text,
@@ -7,7 +7,11 @@ import {
   TouchableOpacity,
   Dimensions,
   Image,
+  Platform,
+  PermissionsAndroid,
+  Alert,
 } from 'react-native';
+import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 import { icons } from '@core/assets/icons';
 import { colors, typography, spacing } from '@core/theme';
 
@@ -22,41 +26,112 @@ interface PhotoSelectorScreenProps {
   onClose: () => void;
 }
 
+interface GalleryPhoto {
+  id: string;
+  uri: string;
+}
+
+async function requestPermission(): Promise<boolean> {
+  if (Platform.OS === 'android') {
+    const version = Platform.Version;
+    if (version >= 33) {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    } else {
+      const granted = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
+      );
+      return granted === PermissionsAndroid.RESULTS.GRANTED;
+    }
+  }
+  return true; // iOS handles permissions via Info.plist
+}
+
 export function PhotoSelectorScreen({
   maxPhotos,
   onNext,
   onClose,
 }: PhotoSelectorScreenProps) {
   const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
+  const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
+  const [hasPermission, setHasPermission] = useState(false);
+  const [endCursor, setEndCursor] = useState<string | undefined>(undefined);
+  const [hasMore, setHasMore] = useState(true);
 
-  // Placeholder photo data — in production, use CameraRoll API
-  const photos = Array.from({ length: 60 }, (_, i) => ({
-    id: `photo_${i}`,
-    uri: '', // Placeholder
-  }));
+  useEffect(() => {
+    loadPhotos();
+  }, []);
 
-  const togglePhoto = (id: string) => {
+  const loadPhotos = async () => {
+    const granted = await requestPermission();
+    if (!granted) {
+      Alert.alert(
+        'Permiso requerido',
+        'Necesitamos acceso a tu galería para seleccionar fotos.',
+      );
+      return;
+    }
+    setHasPermission(true);
+    fetchPhotos();
+  };
+
+  const fetchPhotos = async (after?: string) => {
+    try {
+      const result = await CameraRoll.getPhotos({
+        first: 60,
+        after,
+        assetType: 'Photos',
+        include: ['filename'],
+      });
+
+      const newPhotos: GalleryPhoto[] = result.edges.map((edge, index) => ({
+        id: edge.node.image.uri,
+        uri: edge.node.image.uri,
+      }));
+
+      if (after) {
+        setPhotos(prev => [...prev, ...newPhotos]);
+      } else {
+        setPhotos(newPhotos);
+      }
+
+      setEndCursor(result.page_info.end_cursor);
+      setHasMore(result.page_info.has_next_page);
+    } catch (error) {
+      console.warn('Error loading photos:', error);
+    }
+  };
+
+  const loadMore = () => {
+    if (hasMore && endCursor) {
+      fetchPhotos(endCursor);
+    }
+  };
+
+  const togglePhoto = (uri: string) => {
     setSelectedPhotos(prev => {
-      if (prev.includes(id)) {
-        return prev.filter(p => p !== id);
+      if (prev.includes(uri)) {
+        return prev.filter(p => p !== uri);
       }
       if (prev.length >= maxPhotos) {
         return prev;
       }
-      return [...prev, id];
+      return [...prev, uri];
     });
   };
 
-  const renderPhoto = ({ item }: { item: { id: string; uri: string } }) => {
-    const isSelected = selectedPhotos.includes(item.id);
-    const selectionIndex = selectedPhotos.indexOf(item.id);
+  const renderPhoto = ({ item }: { item: GalleryPhoto }) => {
+    const isSelected = selectedPhotos.includes(item.uri);
+    const selectionIndex = selectedPhotos.indexOf(item.uri);
 
     return (
       <TouchableOpacity
         style={styles.photoItem}
-        onPress={() => togglePhoto(item.id)}
+        onPress={() => togglePhoto(item.uri)}
         activeOpacity={0.7}>
-        <View style={styles.photoPlaceholder} />
+        <Image source={{ uri: item.uri }} style={styles.photoImage} />
         {isSelected && (
           <View style={styles.selectedOverlay}>
             <View style={styles.selectionBadge}>
@@ -64,9 +139,7 @@ export function PhotoSelectorScreen({
             </View>
           </View>
         )}
-        {!isSelected && (
-          <View style={styles.unselectedCircle} />
-        )}
+        {!isSelected && <View style={styles.unselectedCircle} />}
       </TouchableOpacity>
     );
   };
@@ -110,14 +183,24 @@ export function PhotoSelectorScreen({
       </View>
 
       {/* Photo grid */}
-      <FlatList
-        data={photos}
-        renderItem={renderPhoto}
-        keyExtractor={item => item.id}
-        numColumns={COLUMNS}
-        columnWrapperStyle={styles.row}
-        showsVerticalScrollIndicator={false}
-      />
+      {hasPermission ? (
+        <FlatList
+          data={photos}
+          renderItem={renderPhoto}
+          keyExtractor={item => item.id}
+          numColumns={COLUMNS}
+          columnWrapperStyle={styles.row}
+          showsVerticalScrollIndicator={false}
+          onEndReached={loadMore}
+          onEndReachedThreshold={0.5}
+        />
+      ) : (
+        <View style={styles.emptyState}>
+          <Text style={styles.emptyText}>
+            Permite el acceso a tu galería para seleccionar fotos
+          </Text>
+        </View>
+      )}
     </View>
   );
 }
@@ -181,10 +264,9 @@ const styles = StyleSheet.create({
     height: ITEM_SIZE,
     position: 'relative',
   },
-  photoPlaceholder: {
+  photoImage: {
     width: '100%',
     height: '100%',
-    backgroundColor: colors.surfaceSecondary,
   },
   selectedOverlay: {
     ...StyleSheet.absoluteFillObject,
@@ -216,5 +298,16 @@ const styles = StyleSheet.create({
     borderWidth: 1.5,
     borderColor: colors.surface,
     backgroundColor: 'rgba(0,0,0,0.2)',
+  },
+  emptyState: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: spacing['3xl'],
+  },
+  emptyText: {
+    fontSize: typography.sizes.md,
+    color: colors.text.secondary,
+    textAlign: 'center',
   },
 });

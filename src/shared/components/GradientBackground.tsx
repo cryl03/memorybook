@@ -18,8 +18,8 @@ export function GradientBackground({
   style,
 }: GradientBackgroundProps) {
   const gradientColors = {
-    warm: ['#FFFFFF', '#F5EDE6', '#E8D5C4'] as const,
-    cool: ['#E8F0F8', '#F0F6FB', '#FAFCFE', '#FFFFFF'] as const,
+    warm: ['#FFFFFF', '#F0F4F8', '#EDE8E3', '#F2DFD0'] as const,
+    cool: ['#FFFFFF', '#F0F4F8', '#E8EEF4', '#FAFCFE'] as const,
     neutral: ['#FFFFFF', '#F5F5F5', '#EEEEEE'] as const,
   };
 

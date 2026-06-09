@@ -36,7 +36,7 @@ export function ProfileScreen({
 
       {/* User info */}
       <View style={styles.userSection}>
-        <Text style={styles.userName}>Sam Mendoza ✏️</Text>
+        <Text style={styles.userName}>Sam Mendoza</Text>
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>S</Text>
         </View>

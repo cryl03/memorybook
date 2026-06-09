@@ -23,6 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
+import { botImage } from '@core/assets/images';
 
 const { width, height } = Dimensions.get('window');
 
@@ -112,15 +113,7 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
     <View style={styles.stepContainer}>
       <View style={styles.topSection}>
         <View style={styles.sphereContainer}>
-          <View style={styles.sphere}>
-            <LinearGradient
-              colors={['#E8EEF4', '#A8BDD4', '#7A9AB8', '#B0C4D8']}
-              locations={[0, 0.3, 0.6, 1]}
-              start={{ x: 0.3, y: 0 }}
-              end={{ x: 0.7, y: 1 }}
-              style={styles.sphereGradient}
-            />
-          </View>
+          <Image source={botImage} style={styles.sphereImage} resizeMode="contain" />
         </View>
 
         <Text style={styles.titleCenter}>¡Hola! Soy Memora</Text>
@@ -157,7 +150,6 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
           onChangeText={setName}
           placeholder="Sam"
           placeholderTextColor={colors.text.tertiary}
-          autoFocus
         />
       </View>
 
@@ -171,15 +163,7 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
     <View style={styles.stepContainer}>
       <View style={styles.topSection}>
         <View style={styles.sphereContainer}>
-          <View style={styles.sphere}>
-            <LinearGradient
-              colors={['#E8EEF4', '#A8BDD4', '#7A9AB8', '#B0C4D8']}
-              locations={[0, 0.3, 0.6, 1]}
-              start={{ x: 0.3, y: 0 }}
-              end={{ x: 0.7, y: 1 }}
-              style={styles.sphereGradient}
-            />
-          </View>
+          <Image source={botImage} style={styles.sphereImage} resizeMode="contain" />
         </View>
 
         <Text style={styles.titleCenter}>
@@ -235,15 +219,7 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
     <View style={styles.stepContainer}>
       <View style={styles.topSection}>
         <View style={styles.sphereContainer}>
-          <View style={styles.sphere}>
-            <LinearGradient
-              colors={['#E8EEF4', '#A8BDD4', '#7A9AB8', '#B0C4D8']}
-              locations={[0, 0.3, 0.6, 1]}
-              start={{ x: 0.3, y: 0 }}
-              end={{ x: 0.7, y: 1 }}
-              style={styles.sphereGradient}
-            />
-          </View>
+          <Image source={botImage} style={styles.sphereImage} resizeMode="contain" />
         </View>
 
         <Text style={styles.titleCenter}>¿Qué estilo va más{'\n'}contigo?</Text>
@@ -306,17 +282,19 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={['#FAFAFA', '#F5F0EB', '#EDE4DB', '#F0E8E0']}
+        colors={['#FFFFFF', '#F0F4F8', '#EDE8E3', '#F2DFD0']}
         locations={[0, 0.4, 0.7, 1]}
         style={StyleSheet.absoluteFill}
       />
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}>
+          showsVerticalScrollIndicator={false}
+          keyboardDismissMode="interactive">
           {step === 'intro' && renderIntroStep()}
           {step === 'name' && renderNameStep()}
           {step === 'story' && renderStoryStep()}
@@ -353,20 +331,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: spacing['3xl'],
   },
-  sphere: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    overflow: 'hidden',
-    shadowColor: '#7A9AB8',
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  sphereGradient: {
-    width: '100%',
-    height: '100%',
+  sphereImage: {
+    width: 120,
+    height: 120,
   },
 
   // Circles (name step background)

@@ -4,3 +4,6 @@ export const slideImages = {
   slide2: require('./slide2.jpg'),
   slide3: require('./slide3.jpg'),
 };
+
+// Bot sphere
+export const botImage = require('./bot.png');
