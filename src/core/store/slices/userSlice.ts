@@ -37,9 +37,13 @@ const userSlice = createSlice({
     resetUser() {
       return initialState;
     },
+    hydrateUser(_state, action: PayloadAction<UserState>) {
+      return action.payload;
+    },
   },
 });
 
-export const { setUserName, completeOnboarding, resetUser } = userSlice.actions;
+export const { setUserName, completeOnboarding, resetUser, hydrateUser } =
+  userSlice.actions;
 
 export default userSlice.reducer;

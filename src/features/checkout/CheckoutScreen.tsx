@@ -1,8 +1,10 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity, Image } from 'react-native';
+import { View, Text, StyleSheet, TouchableOpacity, Image, Alert } from 'react-native';
 import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
+import { albumService } from '@core/api';
+import { getErrorMessage } from '@core/api/errors';
 
 interface CheckoutScreenProps {
   albumTitle: string;
@@ -10,6 +12,7 @@ interface CheckoutScreenProps {
   price: number;
   pageCount: number;
   photoCount: number;
+  remoteAlbumId?: string;
   onBack: () => void;
   onConfirm: () => void;
 }
@@ -22,24 +25,51 @@ export function CheckoutScreen({
   price,
   pageCount,
   photoCount,
+  remoteAlbumId,
   onBack,
   onConfirm,
 }: CheckoutScreenProps) {
   const [shipping, setShipping] = useState<ShippingOption>('estandar');
+  const [isProcessing, setIsProcessing] = useState(false);
 
   const shippingCost = shipping === 'express' ? 50 : 0;
   const total = price + shippingCost;
 
+  const handleConfirm = async () => {
+    if (!remoteAlbumId) {
+      Alert.alert(
+        'Álbum no sincronizado',
+        'Inicia sesión y crea el álbum de nuevo para generar el PDF antes de comprar.',
+      );
+      return;
+    }
+
+    setIsProcessing(true);
+
+    try {
+      await albumService.patchAlbum(remoteAlbumId, { nombre: albumTitle });
+      await albumService.generateAlbumPdf(remoteAlbumId);
+
+      Alert.alert(
+        'Pedido confirmado',
+        'Tu álbum fue enviado a producción. El PDF se generó correctamente.',
+        [{ text: 'OK', onPress: onConfirm }],
+      );
+    } catch (error) {
+      Alert.alert('Error', getErrorMessage(error, 'No se pudo completar el pedido'));
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   return (
     <View style={styles.container}>
-      {/* Header */}
       <TouchableOpacity onPress={onBack} style={styles.backButton}>
         <Text style={styles.backText}>Volver</Text>
       </TouchableOpacity>
 
       <Text style={styles.title}>Resumen de{'\n'}compra</Text>
 
-      {/* Album card */}
       <View style={styles.albumCard}>
         <View style={styles.albumThumb} />
         <View style={styles.albumInfo}>
@@ -49,7 +79,6 @@ export function CheckoutScreen({
         <Text style={styles.albumPrice}>${price}</Text>
       </View>
 
-      {/* Details */}
       <View style={styles.detailsContainer}>
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Páginas</Text>
@@ -63,7 +92,11 @@ export function CheckoutScreen({
         <View style={styles.separator} />
         <View style={styles.detailRow}>
           <Text style={styles.detailLabel}>Envío</Text>
-          <TouchableOpacity style={styles.shippingSelector}>
+          <TouchableOpacity
+            style={styles.shippingSelector}
+            onPress={() =>
+              setShipping(current => (current === 'estandar' ? 'express' : 'estandar'))
+            }>
             <Text style={styles.shippingText}>
               {shipping === 'estandar' ? 'Estándar' : 'Express'}
             </Text>
@@ -76,12 +109,19 @@ export function CheckoutScreen({
         </View>
       </View>
 
-      {/* Bottom CTA */}
+      {!remoteAlbumId ? (
+        <Text style={styles.syncWarning}>
+          Este álbum aún no está en la nube. Inicia sesión para sincronizarlo.
+        </Text>
+      ) : null}
+
       <View style={styles.bottomContainer}>
         <Button
-          title={`Volver a pedir · $${total}`}
-          onPress={onConfirm}
+          title={`Confirmar pedido · $${total}`}
+          onPress={handleConfirm}
           icon="badge"
+          loading={isProcessing}
+          disabled={isProcessing}
         />
       </View>
     </View>
@@ -175,6 +215,12 @@ const styles = StyleSheet.create({
   shippingText: {
     fontSize: typography.sizes.sm,
     color: colors.text.primary,
+  },
+  syncWarning: {
+    marginTop: spacing.xl,
+    fontSize: typography.sizes.sm,
+    color: colors.warning,
+    lineHeight: typography.sizes.sm * typography.lineHeights.relaxed,
   },
   bottomContainer: {
     position: 'absolute',

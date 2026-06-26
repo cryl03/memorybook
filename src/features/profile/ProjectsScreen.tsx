@@ -1,27 +1,121 @@
-import React from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  View,
+  Text,
+  StyleSheet,
+  TouchableOpacity,
+  ActivityIndicator,
+  Image,
+  Alert,
+} from 'react-native';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
+import { albumService } from '@core/api';
+import type { Album } from '@core/api/types';
+import { getErrorMessage } from '@core/api/errors';
 
 interface ProjectsScreenProps {
   onBack: () => void;
-  onEdit: (projectId: string) => void;
+  onEdit: (projectId: string) => Promise<void>;
 }
 
-interface Project {
-  id: string;
-  title: string;
-  lastEdited: string;
+function formatRelativeDate(dateString?: string): string {
+  if (!dateString) return 'Sin fecha';
+
+  const date = new Date(dateString);
+  const diffMs = Date.now() - date.getTime();
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+
+  if (diffHours < 1) return 'hace unos minutos';
+  if (diffHours < 24) return `hace ${diffHours} hora${diffHours === 1 ? '' : 's'}`;
+
+  const diffDays = Math.floor(diffHours / 24);
+  if (diffDays < 7) return `hace ${diffDays} día${diffDays === 1 ? '' : 's'}`;
+
+  return date.toLocaleDateString('es-MX', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
 }
 
-const MOCK_PROJECTS: Project[] = [
-  { id: '1', title: 'Verano en la playa', lastEdited: 'hace 3 horas' },
-  { id: '2', title: 'Verano en la playa', lastEdited: 'hace 6 días' },
-  { id: '3', title: 'Verano en la playa', lastEdited: 'hace 6 días' },
-];
+function getCoverUri(album: Album): string | null {
+  const firstPhoto = album.fotos?.[0];
+  return firstPhoto?.imagen ?? null;
+}
 
 export function ProjectsScreen({ onBack, onEdit }: ProjectsScreenProps) {
-  const recentProjects = MOCK_PROJECTS.slice(0, 1);
-  const otherProjects = MOCK_PROJECTS.slice(1);
+  const [albums, setAlbums] = useState<Album[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [openingId, setOpeningId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+
+  const loadProjects = useCallback(async () => {
+    setIsLoading(true);
+    setError(null);
+
+    try {
+      const response = await albumService.listAlbums();
+      setAlbums(response.results);
+    } catch (err) {
+      setError(getErrorMessage(err, 'No se pudieron cargar los proyectos'));
+    } finally {
+      setIsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    loadProjects();
+  }, [loadProjects]);
+
+  const handleOpenProject = useCallback(
+    async (projectId: string) => {
+      setOpeningId(projectId);
+      try {
+        await onEdit(projectId);
+      } catch (err) {
+        setError(getErrorMessage(err, 'No se pudo abrir el proyecto'));
+      } finally {
+        setOpeningId(null);
+      }
+    },
+    [onEdit],
+  );
+
+  const handleDeleteProject = useCallback(
+    (project: Album) => {
+      if (!project.unique_id) return;
+
+      Alert.alert(
+        'Eliminar álbum',
+        `¿Eliminar "${project.nombre}"? Esta acción no se puede deshacer.`,
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          {
+            text: 'Eliminar',
+            style: 'destructive',
+            onPress: async () => {
+              setDeletingId(project.unique_id!);
+              try {
+                await albumService.deleteAlbum(project.unique_id!);
+                setAlbums(current =>
+                  current.filter(item => item.unique_id !== project.unique_id),
+                );
+              } catch (err) {
+                setError(getErrorMessage(err, 'No se pudo eliminar el álbum'));
+              } finally {
+                setDeletingId(null);
+              }
+            },
+          },
+        ],
+      );
+    },
+    [],
+  );
+
+  const recentProjects = useMemo(() => albums.slice(0, 1), [albums]);
+  const otherProjects = useMemo(() => albums.slice(1), [albums]);
 
   return (
     <View style={styles.container}>
@@ -31,42 +125,108 @@ export function ProjectsScreen({ onBack, onEdit }: ProjectsScreenProps) {
 
       <Text style={styles.title}>Tus proyectos{'\n'}guardados</Text>
 
-      {recentProjects.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Editado recientemente</Text>
-          {recentProjects.map(project => (
-            <TouchableOpacity
-              key={project.id}
-              style={[styles.projectCard, styles.projectCardRecent]}
-              onPress={() => onEdit(project.id)}>
-              <View style={styles.projectThumb} />
-              <View style={styles.projectInfo}>
-                <Text style={styles.projectTitle}>{project.title}</Text>
-                <Text style={styles.projectDate}>{project.lastEdited}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
+      {isLoading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.text.primary} />
         </View>
-      )}
+      ) : error ? (
+        <View style={styles.centered}>
+          <Text style={styles.error}>{error}</Text>
+          <TouchableOpacity onPress={loadProjects}>
+            <Text style={styles.retry}>Reintentar</Text>
+          </TouchableOpacity>
+        </View>
+      ) : albums.length === 0 ? (
+        <View style={styles.centered}>
+          <Text style={styles.empty}>Aún no tienes proyectos guardados.</Text>
+        </View>
+      ) : (
+        <>
+          {recentProjects.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Editado recientemente</Text>
+              {recentProjects.map(project => (
+                <ProjectCard
+                  key={project.unique_id}
+                  album={project}
+                  recent
+                  loading={openingId === project.unique_id}
+                  deleting={deletingId === project.unique_id}
+                  onPress={() => handleOpenProject(project.unique_id!)}
+                  onDelete={() => handleDeleteProject(project)}
+                />
+              ))}
+            </View>
+          )}
 
-      {otherProjects.length > 0 && (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Otros proyectos</Text>
-          {otherProjects.map(project => (
-            <TouchableOpacity
-              key={project.id}
-              style={styles.projectCard}
-              onPress={() => onEdit(project.id)}>
-              <View style={styles.projectThumb} />
-              <View style={styles.projectInfo}>
-                <Text style={styles.projectTitle}>{project.title}</Text>
-                <Text style={styles.projectDate}>{project.lastEdited}</Text>
-              </View>
-            </TouchableOpacity>
-          ))}
-        </View>
+          {otherProjects.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Otros proyectos</Text>
+              {otherProjects.map(project => (
+                <ProjectCard
+                  key={project.unique_id}
+                  album={project}
+                  loading={openingId === project.unique_id}
+                  deleting={deletingId === project.unique_id}
+                  onPress={() => handleOpenProject(project.unique_id!)}
+                  onDelete={() => handleDeleteProject(project)}
+                />
+              ))}
+            </View>
+          )}
+        </>
       )}
     </View>
+  );
+}
+
+interface ProjectCardProps {
+  album: Album;
+  recent?: boolean;
+  loading?: boolean;
+  deleting?: boolean;
+  onPress: () => void;
+  onDelete: () => void;
+}
+
+function ProjectCard({
+  album,
+  recent = false,
+  loading = false,
+  deleting = false,
+  onPress,
+  onDelete,
+}: ProjectCardProps) {
+  const coverUri = getCoverUri(album);
+
+  return (
+    <TouchableOpacity
+      style={[styles.projectCard, recent && styles.projectCardRecent]}
+      onPress={onPress}
+      disabled={loading || deleting}>
+      {coverUri ? (
+        <Image source={{ uri: coverUri }} style={styles.projectThumb} />
+      ) : (
+        <View style={styles.projectThumb} />
+      )}
+      <View style={styles.projectInfo}>
+        <Text style={styles.projectTitle}>{album.nombre}</Text>
+        <Text style={styles.projectDate}>
+          {deleting
+            ? 'Eliminando...'
+            : loading
+              ? 'Abriendo...'
+              : formatRelativeDate(album.fecha_modificacion ?? album.fecha_creacion)}
+        </Text>
+      </View>
+      {loading || deleting ? (
+        <ActivityIndicator color={colors.text.primary} />
+      ) : (
+        <TouchableOpacity onPress={onDelete} hitSlop={8}>
+          <Text style={styles.deleteText}>Eliminar</Text>
+        </TouchableOpacity>
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -90,6 +250,27 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     lineHeight: typography.sizes['3xl'] * typography.lineHeights.tight,
     marginBottom: spacing['2xl'],
+  },
+  centered: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: spacing.md,
+  },
+  error: {
+    color: colors.error,
+    textAlign: 'center',
+    fontSize: typography.sizes.md,
+  },
+  retry: {
+    color: colors.text.primary,
+    fontWeight: typography.weights.semibold,
+    fontSize: typography.sizes.md,
+  },
+  empty: {
+    color: colors.text.secondary,
+    fontSize: typography.sizes.md,
+    textAlign: 'center',
   },
   section: {
     marginBottom: spacing['2xl'],
@@ -130,5 +311,10 @@ const styles = StyleSheet.create({
   projectDate: {
     fontSize: typography.sizes.xs,
     color: colors.text.secondary,
+  },
+  deleteText: {
+    fontSize: typography.sizes.xs,
+    color: colors.error,
+    fontWeight: typography.weights.medium,
   },
 });

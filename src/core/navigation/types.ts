@@ -1,6 +1,8 @@
 export type RootStackParamList = {
   Splash: undefined;
   Presentation: undefined;
+  Login: undefined;
+  Register: undefined;
   OnboardingChat: undefined;
   PhotoCount: undefined;
   PhotoSelector: { maxPhotos: number };

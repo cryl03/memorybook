@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useCallback, useState } from 'react';
 import {
   View,
   Text,
@@ -7,26 +7,66 @@ import {
   Switch,
   ScrollView,
   Image,
+  Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
+import { useAppSelector } from '@core/store/hooks';
+import { albumService } from '@core/api';
 
 interface ProfileScreenProps {
   onNavigateOrders: () => void;
   onNavigateProjects: () => void;
+  onNavigateAlbums: () => void;
+  onLogout: () => void;
   onEditProfile: () => void;
 }
 
 export function ProfileScreen({
   onNavigateOrders,
   onNavigateProjects,
+  onNavigateAlbums,
+  onLogout,
   onEditProfile,
 }: ProfileScreenProps) {
   const [notifications, setNotifications] = React.useState(true);
+  const [albumCount, setAlbumCount] = useState(0);
+  const auth = useAppSelector(state => state.auth);
+  const user = useAppSelector(state => state.user);
+
+  const displayName = user.name || auth.username || 'Usuario';
+  const avatarLetter = displayName.charAt(0).toUpperCase();
+
+  const loadStats = useCallback(async () => {
+    if (!auth.isAuthenticated) {
+      setAlbumCount(0);
+      return;
+    }
+
+    try {
+      const response = await albumService.listAlbums();
+      setAlbumCount(response.count);
+    } catch {
+      setAlbumCount(0);
+    }
+  }, [auth.isAuthenticated]);
+
+  useFocusEffect(
+    useCallback(() => {
+      loadStats();
+    }, [loadStats]),
+  );
+
+  const handleLogout = () => {
+    Alert.alert('Cerrar sesión', '¿Seguro que quieres salir?', [
+      { text: 'Cancelar', style: 'cancel' },
+      { text: 'Salir', style: 'destructive', onPress: onLogout },
+    ]);
+  };
 
   return (
     <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
-      {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Perfil</Text>
         <TouchableOpacity onPress={onEditProfile}>
@@ -34,44 +74,44 @@ export function ProfileScreen({
         </TouchableOpacity>
       </View>
 
-      {/* User info */}
       <View style={styles.userSection}>
-        <Text style={styles.userName}>Sam Mendoza</Text>
+        <Text style={styles.userName}>{displayName}</Text>
+        {auth.username ? (
+          <Text style={styles.userEmail}>{auth.username}</Text>
+        ) : null}
         <View style={styles.avatar}>
-          <Text style={styles.avatarText}>S</Text>
+          <Text style={styles.avatarText}>{avatarLetter}</Text>
         </View>
 
-        {/* Stats */}
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>12</Text>
+            <Text style={styles.statNumber}>{albumCount}</Text>
             <Text style={styles.statLabel}>Álbumes creados</Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>8</Text>
+            <Text style={styles.statNumber}>—</Text>
             <Text style={styles.statLabel}>Compras</Text>
           </View>
         </View>
       </View>
 
-      {/* Menu items */}
       <View style={styles.menuSection}>
         <MenuItem
           icon="book"
           label="Mis álbumes"
-          value="12"
-          onPress={() => {}}
+          value={String(albumCount)}
+          onPress={onNavigateAlbums}
         />
         <MenuItem
           icon="badge"
           label="Mis compras"
-          value="8"
+          value="—"
           onPress={onNavigateOrders}
         />
         <MenuItem
           icon="book"
           label="Mis proyectos"
-          value="5"
+          value={String(albumCount)}
           onPress={onNavigateProjects}
         />
         <View style={styles.menuItem}>
@@ -90,6 +130,13 @@ export function ProfileScreen({
             thumbColor={colors.surface}
           />
         </View>
+        {auth.isAuthenticated ? (
+          <TouchableOpacity style={styles.menuItem} onPress={handleLogout}>
+            <View style={styles.menuItemLeft}>
+              <Text style={styles.logoutLabel}>Cerrar sesión</Text>
+            </View>
+          </TouchableOpacity>
+        ) : null}
       </View>
     </ScrollView>
   );
@@ -157,6 +204,11 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.xl,
     fontWeight: typography.weights.bold,
     color: colors.text.primary,
+    marginBottom: spacing.xs,
+  },
+  userEmail: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
     marginBottom: spacing.lg,
   },
   avatar: {
@@ -216,6 +268,10 @@ const styles = StyleSheet.create({
   menuItemLabel: {
     fontSize: typography.sizes.md,
     color: colors.text.primary,
+  },
+  logoutLabel: {
+    fontSize: typography.sizes.md,
+    color: colors.error,
   },
   menuItemRight: {
     flexDirection: 'row',

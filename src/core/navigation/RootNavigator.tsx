@@ -1,14 +1,26 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useEffect } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import { Alert } from 'react-native';
 import { useAppDispatch, useAppSelector } from '@core/store/hooks';
-import { completeOnboarding } from '@core/store/slices/userSlice';
+import { store } from '@core/store';
+import { completeOnboarding, hydrateUser } from '@core/store/slices/userSlice';
+import { hydrateAuth } from '@core/store/slices/authSlice';
 import {
   setAlbumConfig,
   setPhotos,
   startCreation,
   finishCreation,
+  hydrateAlbum,
 } from '@core/store/slices/albumSlice';
+import { loadSession } from '@core/storage/sessionStorage';
+import { hasSavedAlbum } from '@features/editor/storage';
+import { loadRemoteAlbumForEditor, saveAlbumToCloud, requestAlbumPdf } from '@core/api';
+import { clearSession } from '@core/storage/sessionStorage';
+import { logout } from '@core/store/slices/authSlice';
+import { resetAlbum } from '@core/store/slices/albumSlice';
+import { resetUser } from '@core/store/slices/userSlice';
+import { clearAlbumStorage } from '@features/editor/storage';
 
 import { SplashScreen } from '@features/splash/SplashScreen';
 import { PresentationScreen } from '@features/onboarding/PresentationScreen';
@@ -22,24 +34,85 @@ import { CreatingScreen } from '@features/album-creation/CreatingScreen';
 import { WowScreen } from '@features/album-creation/WowScreen';
 import { EditorScreen } from '@features/editor/EditorScreen';
 import { CheckoutScreen } from '@features/checkout/CheckoutScreen';
+import { LoginScreen } from '@features/auth/LoginScreen';
+import { RegisterScreen } from '@features/auth/RegisterScreen';
 import { ProfileNavigator } from './ProfileNavigator';
 
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+async function resolveInitialRoute(): Promise<keyof RootStackParamList> {
+  const [session, savedAlbum] = await Promise.all([loadSession(), hasSavedAlbum()]);
+
+  if (savedAlbum) return 'Editor';
+  if (session?.album.currentAlbum && !session.album.isCreating) return 'Wow';
+  if (session?.user.isOnboarded) return 'MainTabs';
+  return 'Presentation';
+}
+
 export function RootNavigator() {
   const [showSplash, setShowSplash] = useState(true);
+  const [isReady, setIsReady] = useState(false);
+  const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Presentation');
   const dispatch = useAppDispatch();
   const user = useAppSelector(state => state.user);
   const album = useAppSelector(state => state.album);
+
+  const handleCloudSave = useCallback(async () => {
+    return saveAlbumToCloud(dispatch, () => store.getState());
+  }, [dispatch]);
+
+  const handleGeneratePdf = useCallback(async () => {
+    return requestAlbumPdf(dispatch, () => store.getState());
+  }, [dispatch]);
+
+  const handleLogout = useCallback(async () => {
+    dispatch(logout());
+    dispatch(resetUser());
+    dispatch(resetAlbum());
+    await Promise.all([clearSession(), clearAlbumStorage()]);
+  }, [dispatch]);
 
   const handleSplashFinish = useCallback(() => {
     setShowSplash(false);
   }, []);
 
+  useEffect(() => {
+    if (showSplash) return;
+
+    let cancelled = false;
+
+    async function bootstrap() {
+      const session = await loadSession();
+      if (session) {
+        dispatch(hydrateUser(session.user));
+        dispatch(hydrateAlbum(session.album));
+        if (session.auth) {
+          dispatch(hydrateAuth(session.auth));
+        }
+      }
+
+      const route = await resolveInitialRoute();
+      if (!cancelled) {
+        setInitialRoute(route);
+        setIsReady(true);
+      }
+    }
+
+    bootstrap();
+
+    return () => {
+      cancelled = true;
+    };
+  }, [showSplash, dispatch]);
+
   if (showSplash) {
     return <SplashScreen onFinish={handleSplashFinish} />;
+  }
+
+  if (!isReady) {
+    return null;
   }
 
   return (
@@ -49,15 +122,33 @@ export function RootNavigator() {
           headerShown: false,
           animation: 'slide_from_right',
         }}
-        initialRouteName={user.isOnboarded ? 'MainTabs' : 'Presentation'}>
+        initialRouteName={initialRoute}>
         {/* Onboarding flow */}
         <Stack.Screen name="Presentation">
           {({ navigation }) => (
             <PresentationScreen
               onNext={() => navigation.navigate('OnboardingChat')}
-              onLogin={() => {
-                // TODO: Navigate to login
-              }}
+              onLogin={() => navigation.navigate('Login')}
+            />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="Login">
+          {({ navigation }) => (
+            <LoginScreen
+              onBack={() => navigation.goBack()}
+              onSuccess={() => navigation.navigate('MainTabs')}
+              onRegister={() => navigation.navigate('Register')}
+            />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="Register">
+          {({ navigation }) => (
+            <RegisterScreen
+              onBack={() => navigation.goBack()}
+              onSuccess={() => navigation.navigate('MainTabs')}
+              onLogin={() => navigation.navigate('Login')}
             />
           )}
         </Stack.Screen>
@@ -128,8 +219,18 @@ export function RootNavigator() {
               albumTitle={album.currentAlbum?.title || 'Verano en la playa'}
               photoCount={album.currentAlbum?.photoCount || 80}
               pageCount={album.currentAlbum?.pageCount || 28}
+              hasRemoteAlbum={Boolean(album.currentAlbum?.remoteId)}
               onEdit={() => navigation.navigate('Editor')}
               onBuy={() => navigation.navigate('Checkout')}
+              onSave={async () => {
+                const saved = await handleCloudSave();
+                if (saved) {
+                  Alert.alert('Guardado', 'Tu álbum se sincronizó correctamente.');
+                }
+              }}
+              onGeneratePdf={async () => {
+                await handleGeneratePdf();
+              }}
             />
           )}
         </Stack.Screen>
@@ -140,7 +241,10 @@ export function RootNavigator() {
               albumTitle={album.currentAlbum?.title || 'Verano en la playa'}
               photoCount={album.currentAlbum?.photoCount || 80}
               pageCount={album.currentAlbum?.pageCount || 28}
-              onSave={() => navigation.navigate('MainTabs')}
+              onSave={async () => {
+                const saved = await handleCloudSave();
+                if (saved) navigation.navigate('MainTabs');
+              }}
               onBuy={() => navigation.navigate('Checkout')}
               onBack={() => navigation.goBack()}
             />
@@ -155,17 +259,31 @@ export function RootNavigator() {
               price={300}
               pageCount={album.currentAlbum?.pageCount || 28}
               photoCount={album.currentAlbum?.photoCount || 80}
+              remoteAlbumId={album.currentAlbum?.remoteId}
               onBack={() => navigation.goBack()}
-              onConfirm={() => {
-                // TODO: Process payment
-                navigation.navigate('MainTabs');
-              }}
+              onConfirm={() => navigation.navigate('MainTabs')}
             />
           )}
         </Stack.Screen>
 
         {/* Main app */}
-        <Stack.Screen name="MainTabs" component={ProfileNavigator} />
+        <Stack.Screen name="MainTabs">
+          {({ navigation }) => (
+            <ProfileNavigator
+              onEditProject={async (projectId: string) => {
+                await loadRemoteAlbumForEditor(projectId, dispatch);
+                navigation.navigate('Editor');
+              }}
+              onLogout={async () => {
+                await handleLogout();
+                navigation.reset({
+                  index: 0,
+                  routes: [{ name: 'Presentation' }],
+                });
+              }}
+            />
+          )}
+        </Stack.Screen>
       </Stack.Navigator>
     </NavigationContainer>
   );

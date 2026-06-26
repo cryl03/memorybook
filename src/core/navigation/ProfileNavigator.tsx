@@ -7,7 +7,12 @@ import type { ProfileStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
 
-export function ProfileNavigator() {
+interface ProfileNavigatorProps {
+  onEditProject: (projectId: string) => Promise<void>;
+  onLogout: () => Promise<void>;
+}
+
+export function ProfileNavigator({ onEditProject, onLogout }: ProfileNavigatorProps) {
   return (
     <Stack.Navigator
       screenOptions={{
@@ -19,6 +24,8 @@ export function ProfileNavigator() {
           <ProfileScreen
             onNavigateOrders={() => navigation.navigate('Orders')}
             onNavigateProjects={() => navigation.navigate('Projects')}
+            onNavigateAlbums={() => navigation.navigate('Projects')}
+            onLogout={onLogout}
             onEditProfile={() => {}}
           />
         )}
@@ -39,9 +46,7 @@ export function ProfileNavigator() {
         {({ navigation }) => (
           <ProjectsScreen
             onBack={() => navigation.goBack()}
-            onEdit={(_projectId: string) => {
-              // TODO: Navigate to editor with project
-            }}
+            onEdit={onEditProject}
           />
         )}
       </Stack.Screen>
