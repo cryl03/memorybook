@@ -22,7 +22,8 @@ const ITEM_SIZE = (width - GAP * (COLUMNS - 1)) / COLUMNS;
 
 interface PhotoSelectorScreenProps {
   maxPhotos: number;
-  onNext: (selectedPhotos: string[]) => void;
+  existingPhotos?: string[];
+  onNext: (selectedPhotos: string[]) => void | Promise<void>;
   onClose: () => void;
 }
 
@@ -51,6 +52,7 @@ async function requestPermission(): Promise<boolean> {
 
 export function PhotoSelectorScreen({
   maxPhotos,
+  existingPhotos = [],
   onNext,
   onClose,
 }: PhotoSelectorScreenProps) {
@@ -110,7 +112,12 @@ export function PhotoSelectorScreen({
     }
   };
 
+  const isAppendMode = existingPhotos.length > 0;
+  const existingSet = new Set(existingPhotos);
+
   const togglePhoto = (uri: string) => {
+    if (existingSet.has(uri)) return;
+
     setSelectedPhotos(prev => {
       if (prev.includes(uri)) {
         return prev.filter(p => p !== uri);
@@ -123,6 +130,7 @@ export function PhotoSelectorScreen({
   };
 
   const renderPhoto = ({ item }: { item: GalleryPhoto }) => {
+    const alreadyInAlbum = existingSet.has(item.uri);
     const isSelected = selectedPhotos.includes(item.uri);
     const selectionIndex = selectedPhotos.indexOf(item.uri);
 
@@ -130,16 +138,25 @@ export function PhotoSelectorScreen({
       <TouchableOpacity
         style={styles.photoItem}
         onPress={() => togglePhoto(item.uri)}
-        activeOpacity={0.7}>
-        <Image source={{ uri: item.uri }} style={styles.photoImage} />
-        {isSelected && (
+        activeOpacity={alreadyInAlbum ? 1 : 0.7}
+        disabled={alreadyInAlbum}>
+        <Image
+          source={{ uri: item.uri }}
+          style={[styles.photoImage, alreadyInAlbum && styles.photoImageDisabled]}
+        />
+        {alreadyInAlbum ? (
+          <View style={styles.alreadyAddedOverlay}>
+            <Text style={styles.alreadyAddedText}>✓</Text>
+          </View>
+        ) : isSelected ? (
           <View style={styles.selectedOverlay}>
             <View style={styles.selectionBadge}>
               <Text style={styles.selectionNumber}>{selectionIndex + 1}</Text>
             </View>
           </View>
+        ) : (
+          <View style={styles.unselectedCircle} />
         )}
-        {!isSelected && <View style={styles.unselectedCircle} />}
       </TouchableOpacity>
     );
   };
@@ -151,7 +168,9 @@ export function PhotoSelectorScreen({
         <TouchableOpacity onPress={onClose} style={styles.closeButton}>
           <Text style={{ fontSize: 24, color: colors.text.primary }}>✕</Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Tu nuevo álbum</Text>
+        <Text style={styles.headerTitle}>
+          {isAppendMode ? 'Agregar fotos' : 'Tu nuevo álbum'}
+        </Text>
         <TouchableOpacity
           onPress={() => onNext(selectedPhotos)}
           disabled={selectedPhotos.length === 0}>
@@ -178,7 +197,9 @@ export function PhotoSelectorScreen({
       {/* Counter */}
       <View style={styles.counterContainer}>
         <Text style={styles.counterText}>
-          {selectedPhotos.length} / {maxPhotos} fotos seleccionadas
+          {isAppendMode
+            ? `${selectedPhotos.length} / ${maxPhotos} fotos nuevas`
+            : `${selectedPhotos.length} / ${maxPhotos} fotos seleccionadas`}
         </Text>
       </View>
 
@@ -267,6 +288,20 @@ const styles = StyleSheet.create({
   photoImage: {
     width: '100%',
     height: '100%',
+  },
+  photoImageDisabled: {
+    opacity: 0.45,
+  },
+  alreadyAddedOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.35)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  alreadyAddedText: {
+    fontSize: typography.sizes.lg,
+    fontWeight: typography.weights.bold,
+    color: colors.text.inverse,
   },
   selectedOverlay: {
     ...StyleSheet.absoluteFillObject,

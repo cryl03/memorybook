@@ -3,36 +3,43 @@ import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'rea
 import LinearGradient from 'react-native-linear-gradient';
 import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
-import { useAppSelector } from '@core/store/hooks';
+import { useAppDispatch, useAppSelector } from '@core/store/hooks';
+import { repairAlbum } from '@core/store/slices/albumSlice';
 
 const { width } = Dimensions.get('window');
 
 interface WowScreenProps {
   albumTitle: string;
-  photoCount: number;
+  photoCount?: number;
   pageCount: number;
   hasRemoteAlbum?: boolean;
   onEdit: () => void;
   onBuy: () => void;
   onSave: () => void | Promise<void>;
+  onAddPhotos: () => void;
   onGeneratePdf?: () => void | Promise<void>;
 }
 
 export function WowScreen({
   albumTitle,
-  photoCount,
   pageCount,
   hasRemoteAlbum = false,
   onEdit,
   onBuy,
   onSave,
+  onAddPhotos,
   onGeneratePdf,
 }: WowScreenProps) {
+  const dispatch = useAppDispatch();
   const [isSaving, setIsSaving] = React.useState(false);
   const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
   const [currentPage, setCurrentPage] = React.useState(1);
   const album = useAppSelector(state => state.album);
   const photos = album.currentAlbum?.photos || [];
+
+  React.useEffect(() => {
+    dispatch(repairAlbum());
+  }, [dispatch]);
 
   const goToPrev = () => setCurrentPage(Math.max(1, currentPage - 1));
   const goToNext = () => setCurrentPage(Math.min(pageCount, currentPage + 1));
@@ -63,10 +70,11 @@ export function WowScreen({
 
   return (
     <LinearGradient
-      colors={['#FFFFFF', '#F5F0EB']}
+      colors={['#FAF7F2', '#FAF7F2']}
       style={styles.container}>
       {/* Album book preview */}
       <View style={styles.bookWrapper}>
+        <View style={styles.bookGlow} />
         <View style={styles.bookCover}>
           {/* Photo on cover - changes per page */}
           <View style={styles.bookPhotoFrame}>
@@ -91,9 +99,18 @@ export function WowScreen({
 
       {/* Album info */}
       <Text style={styles.albumTitle}>{albumTitle}</Text>
-      <Text style={styles.albumMeta}>
-        {photoCount} fotos · {pageCount} páginas
-      </Text>
+      <View style={styles.metaRow}>
+        <Text style={styles.albumMeta}>
+          {photos.length} fotos · {pageCount} páginas
+        </Text>
+        <TouchableOpacity
+          style={styles.addPhotosChip}
+          onPress={onAddPhotos}
+          accessibilityLabel="Agregar fotos"
+          accessibilityRole="button">
+          <Text style={styles.addPhotosText}>Agregar fotos</Text>
+        </TouchableOpacity>
+      </View>
 
       {/* Spacer */}
       <View style={styles.spacer} />
@@ -139,10 +156,10 @@ export function WowScreen({
       {/* Action buttons */}
       <View style={styles.bottomActions}>
         <TouchableOpacity style={styles.buyButton} onPress={onBuy}>
-          <Text style={styles.buyButtonText}>Llevarlo conmigo · $300</Text>
+          <Text style={styles.buyButtonText}>Llevarlo conmigo - $300</Text>
           <Image
             source={icons.badge}
-            style={{ width: 18, height: 18, tintColor: colors.text.inverse }}
+            style={styles.buyButtonIcon}
             resizeMode="contain"
           />
         </TouchableOpacity>
@@ -179,26 +196,35 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     alignItems: 'center',
-    paddingTop: spacing['5xl'],
+    paddingTop: spacing['4xl'],
   },
   // Book
   bookWrapper: {
     alignItems: 'center',
-    marginBottom: spacing['2xl'],
+    marginBottom: spacing['3xl'],
+    position: 'relative',
+  },
+  bookGlow: {
+    position: 'absolute',
+    top: '10%',
+    width: width * 0.7,
+    height: width * 0.7,
+    borderRadius: width * 0.35,
+    backgroundColor: 'rgba(168, 196, 217, 0.35)',
   },
   bookCover: {
-    width: width * 0.55,
-    height: width * 0.78,
+    width: width * 0.58,
+    height: width * 0.84,
     borderRadius: borderRadius.sm,
-    backgroundColor: colors.blue.light,
+    backgroundColor: '#A8C4D9',
     alignItems: 'center',
-    paddingTop: spacing['3xl'],
+    paddingTop: spacing['4xl'],
     paddingHorizontal: spacing.xl,
     shadowColor: '#000',
-    shadowOffset: { width: 4, height: 8 },
-    shadowOpacity: 0.18,
-    shadowRadius: 16,
-    elevation: 10,
+    shadowOffset: { width: 2, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 8,
   },
   bookPhotoFrame: {
     width: '55%',
@@ -233,11 +259,29 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes['3xl'],
     fontWeight: typography.weights.bold,
     color: colors.text.primary,
-    marginBottom: spacing.xs,
+    marginBottom: spacing.sm,
+    textAlign: 'center',
   },
   albumMeta: {
     fontSize: typography.sizes.md,
-    color: colors.text.secondary,
+    fontWeight: typography.weights.regular,
+    color: colors.text.primary,
+  },
+  metaRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.lg,
+  },
+  addPhotosChip: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.full,
+    backgroundColor: '#635C57',
+  },
+  addPhotosText: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.medium,
+    color: colors.text.inverse,
   },
   spacer: {
     flex: 1,
@@ -249,23 +293,26 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     width: '100%',
     paddingHorizontal: spacing['3xl'],
-    marginBottom: spacing.xl,
+    marginBottom: spacing['2xl'],
   },
   navArrow: {
     padding: spacing.sm,
+    width: 40,
+    alignItems: 'center',
   },
   pageIndicator: {
     fontSize: typography.sizes.lg,
     color: colors.text.primary,
-    fontWeight: typography.weights.medium,
+    fontWeight: typography.weights.regular,
   },
   // Bottom
   bottomActions: {
     flexDirection: 'row',
-    paddingHorizontal: spacing['2xl'],
+    paddingHorizontal: spacing['3xl'],
     gap: spacing.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xl,
     width: '100%',
+    alignItems: 'center',
   },
   buyButton: {
     flex: 1,
@@ -273,22 +320,29 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     height: 52,
-    borderRadius: borderRadius.xl,
-    backgroundColor: colors.slate.medium,
+    borderRadius: borderRadius.full,
+    backgroundColor: colors.button.primary,
     gap: spacing.sm,
+    paddingHorizontal: spacing.lg,
   },
   buyButtonText: {
     fontSize: typography.sizes.md,
     fontWeight: typography.weights.semibold,
     color: colors.text.inverse,
   },
+  buyButtonIcon: {
+    width: 18,
+    height: 18,
+    tintColor: colors.text.inverse,
+  },
   saveButton: {
     height: 52,
     paddingHorizontal: spacing['2xl'],
     justifyContent: 'center',
     alignItems: 'center',
-    borderRadius: borderRadius.xl,
-    backgroundColor: colors.slate.medium,
+    borderRadius: borderRadius.full,
+    backgroundColor: '#635C57',
+    minWidth: 110,
   },
   saveButtonText: {
     fontSize: typography.sizes.md,
@@ -297,10 +351,11 @@ const styles = StyleSheet.create({
   },
   editLink: {
     alignItems: 'center',
-    paddingBottom: spacing['3xl'],
+    paddingBottom: spacing['4xl'],
   },
   editLinkText: {
     fontSize: typography.sizes.md,
+    fontWeight: typography.weights.bold,
     color: colors.text.primary,
     textDecorationLine: 'underline',
   },

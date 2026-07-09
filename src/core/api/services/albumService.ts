@@ -15,9 +15,16 @@ export async function getAlbum(id: string): Promise<Album> {
 }
 
 export async function createAlbum(payload: CreateAlbumPayload): Promise<Album> {
+  const formData = new FormData();
+  formData.append('nombre', payload.nombre);
+
+  if (payload.descripcion) {
+    formData.append('descripcion', payload.descripcion);
+  }
+
   return apiRequest<Album>('/album/create', {
     method: 'POST',
-    body: payload,
+    body: formData,
   });
 }
 

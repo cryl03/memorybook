@@ -41,6 +41,7 @@ interface EditorScreenProps {
   onSave: () => void;
   onBuy: () => void;
   onBack: () => void;
+  onAddPhotos: () => void;
 }
 
 type EditorTab = 'textos' | 'datos';
@@ -52,6 +53,7 @@ export function EditorScreen({
   onSave,
   onBuy,
   onBack,
+  onAddPhotos,
 }: EditorScreenProps) {
   const dispatch = useAppDispatch();
   const album = useAppSelector(state => state.album);
@@ -70,6 +72,7 @@ export function EditorScreen({
   const [showPhotoActions, setShowPhotoActions] = useState(false);
   const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
   const locationRequestRef = useRef(0);
+  const photosCountRef = useRef(photos.length);
 
   // Initialize pages once: load from storage or distribute from photos
   useEffect(() => {
@@ -103,6 +106,24 @@ export function EditorScreen({
 
     initPages();
   }, [photos, pageCount]);
+
+  useEffect(() => {
+    if (!pagesInitializedRef.current) return;
+    if (photos.length <= photosCountRef.current) {
+      photosCountRef.current = photos.length;
+      return;
+    }
+
+    const reloadPages = async () => {
+      const savedPages = await loadAlbumPages();
+      if (savedPages && savedPages.length > 0) {
+        setPages(savedPages);
+      }
+      photosCountRef.current = photos.length;
+    };
+
+    reloadPages();
+  }, [photos.length]);
 
   const isCoverPage = currentPage === 0;
   const currentPageData = pages[currentPage];
@@ -482,6 +503,7 @@ export function EditorScreen({
           </Text>
           <TouchableOpacity
             style={styles.addPhotosChip}
+            onPress={onAddPhotos}
             accessibilityLabel="Agregar fotos"
             accessibilityRole="button">
             <Text style={styles.addPhotosText}>Agregar fotos</Text>

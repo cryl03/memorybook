@@ -1,9 +1,11 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
+import { normalizeCurrentAlbum } from '../albumUtils';
 
 export interface AlbumState {
   currentAlbum: {
     title: string;
     photoCount: number;
+    maxPhotos: number;
     pageCount: number;
     photos: string[];
     style: string;
@@ -39,6 +41,7 @@ const albumSlice = createSlice({
       state.currentAlbum = {
         title: '',
         photoCount: action.payload.photoCount,
+        maxPhotos: action.payload.photoCount,
         pageCount: Math.ceil(action.payload.photoCount / 3),
         photos: [],
         style: action.payload.style,
@@ -48,8 +51,14 @@ const albumSlice = createSlice({
     setPhotos(state, action: PayloadAction<string[]>) {
       if (state.currentAlbum) {
         state.currentAlbum.photos = action.payload;
-        state.currentAlbum.photoCount = action.payload.length;
       }
+    },
+    appendPhotos(state, action: PayloadAction<string[]>) {
+      if (!state.currentAlbum) return;
+
+      const existing = new Set(state.currentAlbum.photos);
+      const newPhotos = action.payload.filter(uri => !existing.has(uri));
+      state.currentAlbum.photos = [...state.currentAlbum.photos, ...newPhotos];
     },
     removePhoto(state, action: PayloadAction<string>) {
       if (!state.currentAlbum) return;
@@ -57,7 +66,6 @@ const albumSlice = createSlice({
       state.currentAlbum.photos = state.currentAlbum.photos.filter(
         uri => uri !== action.payload,
       );
-      state.currentAlbum.photoCount = state.currentAlbum.photos.length;
 
       if (state.currentAlbum.remoteFotos) {
         delete state.currentAlbum.remoteFotos[action.payload];
@@ -70,8 +78,11 @@ const albumSlice = createSlice({
     },
     finishCreation(state) {
       state.isCreating = false;
-      if (state.currentAlbum && !state.currentAlbum.title) {
-        state.currentAlbum.title = 'Verano en la playa';
+      if (state.currentAlbum) {
+        if (!state.currentAlbum.title) {
+          state.currentAlbum.title = 'Verano en la playa';
+        }
+        state.currentAlbum = normalizeCurrentAlbum(state.currentAlbum);
       }
     },
     setRemoteAlbumId(state, action: PayloadAction<string>) {
@@ -105,6 +116,7 @@ const albumSlice = createSlice({
       action: PayloadAction<{
         title: string;
         photoCount: number;
+        maxPhotos?: number;
         pageCount: number;
         photos: string[];
         style: string;
@@ -113,12 +125,24 @@ const albumSlice = createSlice({
         remoteFotos?: Record<string, string>;
       }>,
     ) {
-      state.currentAlbum = action.payload;
+      state.currentAlbum = {
+        ...action.payload,
+        maxPhotos: action.payload.maxPhotos ?? action.payload.photoCount,
+      };
       state.isCreating = false;
       state.syncError = null;
     },
     hydrateAlbum(_state, action: PayloadAction<AlbumState>) {
-      return action.payload;
+      const next = action.payload;
+      if (next.currentAlbum) {
+        next.currentAlbum = normalizeCurrentAlbum(next.currentAlbum);
+      }
+      return next;
+    },
+    repairAlbum(state) {
+      if (state.currentAlbum) {
+        state.currentAlbum = normalizeCurrentAlbum(state.currentAlbum);
+      }
     },
   },
 });
@@ -127,6 +151,7 @@ export const {
   startCreation,
   setAlbumConfig,
   setPhotos,
+  appendPhotos,
   removePhoto,
   setTitle,
   finishCreation,
@@ -137,6 +162,7 @@ export const {
   loadFromRemote,
   resetAlbum,
   hydrateAlbum,
+  repairAlbum,
 } = albumSlice.actions;
 
 export default albumSlice.reducer;

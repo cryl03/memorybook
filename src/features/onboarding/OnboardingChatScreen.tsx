@@ -23,7 +23,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
-import { botImage } from '@core/assets/images';
+import { botImage, onboardingNameBg } from '@core/assets/images';
 
 const { width, height } = Dimensions.get('window');
 
@@ -129,32 +129,42 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
     </View>
   );
 
+  const renderNameStepBackground = () => (
+    <Image
+      source={onboardingNameBg}
+      style={styles.nameBgFull}
+      resizeMode="contain"
+    />
+  );
+
   const renderNameStep = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.topSection}>
-        {/* Concentric blue circles background */}
-        <View style={styles.circlesContainer}>
-          <View style={[styles.circle, styles.circleOuter]} />
-          <View style={[styles.circle, styles.circleMiddle]} />
-          <View style={[styles.circle, styles.circleInner]} />
-        </View>
-
+      <View style={styles.nameTopSection}>
         <Text style={styles.titleLeft}>Para crear algo{'\n'}hecho para ti</Text>
       </View>
 
       <View style={styles.inputSection}>
         <Text style={styles.inputLabel}>¿Cómo prefieres que te llame?</Text>
-        <TextInput
-          style={styles.input}
-          value={name}
-          onChangeText={setName}
-          placeholder="Sam"
-          placeholderTextColor={colors.text.tertiary}
-        />
+        <View style={styles.inputPill}>
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={setName}
+            placeholder="Sam"
+            placeholderTextColor="rgba(26, 26, 26, 0.45)"
+            autoFocus
+          />
+        </View>
       </View>
 
       <View style={styles.bottomButton}>
-        <Button title="Continuar" onPress={handleNameSubmit} disabled={!name.trim()} />
+        <Button
+          title="Continuar"
+          onPress={handleNameSubmit}
+          disabled={!name.trim()}
+          style={styles.continueButton}
+          textStyle={styles.continueButtonText}
+        />
       </View>
     </View>
   );
@@ -281,11 +291,15 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
 
   return (
     <View style={styles.container}>
-      <LinearGradient
-        colors={['#FFFFFF', '#F0F4F8', '#EDE8E3', '#F2DFD0']}
-        locations={[0, 0.4, 0.7, 1]}
-        style={StyleSheet.absoluteFill}
-      />
+      {step === 'name' ? (
+        renderNameStepBackground()
+      ) : (
+        <LinearGradient
+          colors={['#FFFFFF', '#F0F4F8', '#EDE8E3', '#F2DFD0']}
+          locations={[0, 0.4, 0.7, 1]}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -308,6 +322,7 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: colors.surface,
   },
   flex: {
     flex: 1,
@@ -336,33 +351,16 @@ const styles = StyleSheet.create({
     height: 120,
   },
 
-  // Circles (name step background)
-  circlesContainer: {
-    position: 'absolute',
-    top: height * 0.25,
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: width,
+  // Name step background
+  nameBgFull: {
+    ...StyleSheet.absoluteFillObject,
+    width,
+    height,
   },
-  circle: {
-    position: 'absolute',
-    borderRadius: 999,
-    borderWidth: 40,
-    borderColor: 'rgba(147, 187, 223, 0.25)',
-  },
-  circleOuter: {
-    width: 340,
-    height: 340,
-  },
-  circleMiddle: {
-    width: 250,
-    height: 250,
-    borderColor: 'rgba(147, 187, 223, 0.35)',
-  },
-  circleInner: {
-    width: 160,
-    height: 160,
-    borderColor: 'rgba(147, 187, 223, 0.45)',
+  nameTopSection: {
+    paddingTop: height * 0.12,
+    paddingHorizontal: spacing['3xl'],
+    zIndex: 1,
   },
 
   // Titles
@@ -375,13 +373,12 @@ const styles = StyleSheet.create({
     marginBottom: spacing.lg,
   },
   titleLeft: {
-    fontSize: typography.sizes['4xl'],
-    fontWeight: typography.weights.bold,
+    fontSize: 34,
+    fontWeight: typography.weights.regular,
     color: colors.text.primary,
-    lineHeight: typography.sizes['4xl'] * typography.lineHeights.tight,
-    paddingHorizontal: spacing['3xl'],
+    lineHeight: 34 * 1.25,
     alignSelf: 'flex-start',
-    marginTop: spacing['4xl'],
+    letterSpacing: -0.3,
   },
   bodyCenter: {
     fontSize: typography.sizes.md,
@@ -394,19 +391,28 @@ const styles = StyleSheet.create({
   inputSection: {
     paddingHorizontal: spacing['3xl'],
     marginTop: 'auto',
-    marginBottom: spacing.xl,
+    marginBottom: spacing['3xl'],
+    zIndex: 1,
   },
   inputLabel: {
-    fontSize: typography.sizes.sm,
-    color: colors.text.secondary,
-    marginBottom: spacing.sm,
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.regular,
+    color: colors.text.primary,
+    marginBottom: spacing.md,
+  },
+  inputPill: {
+    backgroundColor: 'rgba(255, 255, 255, 0.38)',
+    borderRadius: borderRadius.full,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.lg,
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.55)',
+    overflow: 'hidden',
   },
   input: {
-    fontSize: typography.sizes.lg,
+    fontSize: typography.sizes.md,
     color: colors.text.primary,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: colors.border,
+    padding: 0,
   },
 
   // Chat section
@@ -524,6 +530,15 @@ const styles = StyleSheet.create({
   // Bottom button
   bottomButton: {
     paddingHorizontal: spacing['3xl'],
-    paddingBottom: spacing.xl,
+    paddingBottom: spacing['3xl'],
+    zIndex: 1,
+  },
+  continueButton: {
+    borderRadius: borderRadius.full,
+    height: 56,
+  },
+  continueButtonText: {
+    fontWeight: typography.weights.medium,
+    fontSize: typography.sizes.md,
   },
 });

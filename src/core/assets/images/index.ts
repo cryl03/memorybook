@@ -7,3 +7,6 @@ export const slideImages = {
 
 // Bot sphere
 export const botImage = require('./bot.png');
+
+// Onboarding name step background
+export const onboardingNameBg = require('./onboarding-name-bg.png');

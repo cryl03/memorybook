@@ -45,6 +45,7 @@ export async function loadRemoteAlbumForEditor(
     loadFromRemote({
       title: album.nombre,
       photoCount: photoUris.length,
+      maxPhotos: photoUris.length,
       pageCount,
       photos: photoUris,
       style: '',

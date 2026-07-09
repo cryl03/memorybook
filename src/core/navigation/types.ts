@@ -5,7 +5,7 @@ export type RootStackParamList = {
   Register: undefined;
   OnboardingChat: undefined;
   PhotoCount: undefined;
-  PhotoSelector: { maxPhotos: number };
+  PhotoSelector: { maxPhotos: number; existingPhotos?: string[]; returnTo?: 'Wow' | 'Editor' };
   Creating: undefined;
   Wow: undefined;
   Editor: undefined;

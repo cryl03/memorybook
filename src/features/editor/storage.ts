@@ -1,8 +1,17 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { PageData } from './types';
+import { PageData, LayoutType } from './types';
+import { distributePhotosToPages } from './utils';
 
 const ALBUM_PAGES_KEY = '@memora_album_pages';
 const ALBUM_TITLE_KEY = '@memora_album_title';
+
+const DEFAULT_COVER_PAGE: PageData = {
+  id: 'page-cover',
+  photos: [],
+  layout: 'single' as LayoutType,
+  text: { content: '', fontSize: 14, alignment: 'center' },
+  stickers: [],
+};
 
 export async function saveAlbumPages(pages: PageData[]): Promise<void> {
   try {
@@ -57,4 +66,15 @@ export async function clearAlbumStorage(): Promise<void> {
   } catch (error) {
     console.warn('Error clearing album storage:', error);
   }
+}
+
+export async function syncPagesWithPhotos(
+  photos: string[],
+  pageCount: number,
+): Promise<void> {
+  const savedPages = await loadAlbumPages();
+  const coverPage =
+    savedPages?.find(page => page.id === 'page-cover') ?? savedPages?.[0] ?? DEFAULT_COVER_PAGE;
+  const distributed = distributePhotosToPages(photos, pageCount);
+  await saveAlbumPages([coverPage, ...distributed]);
 }

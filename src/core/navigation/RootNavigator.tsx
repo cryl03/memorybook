@@ -9,12 +9,15 @@ import { hydrateAuth } from '@core/store/slices/authSlice';
 import {
   setAlbumConfig,
   setPhotos,
+  appendPhotos,
   startCreation,
   finishCreation,
   hydrateAlbum,
+  repairAlbum,
 } from '@core/store/slices/albumSlice';
+import { resolveAlbumMaxPhotos } from '@core/store/albumUtils';
 import { loadSession } from '@core/storage/sessionStorage';
-import { hasSavedAlbum } from '@features/editor/storage';
+import { hasSavedAlbum, syncPagesWithPhotos } from '@features/editor/storage';
 import { loadRemoteAlbumForEditor, saveAlbumToCloud, requestAlbumPdf } from '@core/api';
 import { clearSession } from '@core/storage/sessionStorage';
 import { logout } from '@core/store/slices/authSlice';
@@ -91,6 +94,7 @@ export function RootNavigator() {
         if (session.auth) {
           dispatch(hydrateAuth(session.auth));
         }
+        dispatch(repairAlbum());
       }
 
       const route = await resolveInitialRoute();
@@ -192,8 +196,23 @@ export function RootNavigator() {
           {({ navigation, route }) => (
             <PhotoSelectorScreen
               maxPhotos={route.params.maxPhotos}
-              onNext={(photos: string[]) => {
+              existingPhotos={route.params.existingPhotos}
+              onNext={async (photos: string[]) => {
+                if (route.params.existingPhotos) {
+                  dispatch(appendPhotos(photos));
+                  const current = store.getState().album.currentAlbum;
+                  if (current) {
+                    await syncPagesWithPhotos(current.photos, current.pageCount);
+                  }
+                  navigation.navigate(route.params.returnTo ?? 'Wow');
+                  return;
+                }
+
                 dispatch(setPhotos(photos));
+                const created = store.getState().album.currentAlbum;
+                if (created) {
+                  await syncPagesWithPhotos(photos, created.pageCount);
+                }
                 dispatch(startCreation());
                 navigation.navigate('Creating');
               }}
@@ -207,6 +226,7 @@ export function RootNavigator() {
             <CreatingScreen
               onComplete={() => {
                 dispatch(finishCreation());
+                dispatch(repairAlbum());
                 navigation.navigate('Wow');
               }}
             />
@@ -217,11 +237,32 @@ export function RootNavigator() {
           {({ navigation }) => (
             <WowScreen
               albumTitle={album.currentAlbum?.title || 'Verano en la playa'}
-              photoCount={album.currentAlbum?.photoCount || 80}
+              photoCount={album.currentAlbum?.photos.length || 0}
               pageCount={album.currentAlbum?.pageCount || 28}
               hasRemoteAlbum={Boolean(album.currentAlbum?.remoteId)}
               onEdit={() => navigation.navigate('Editor')}
               onBuy={() => navigation.navigate('Checkout')}
+              onAddPhotos={() => {
+                const current = store.getState().album.currentAlbum;
+                if (!current) return;
+
+                const maxPhotos = resolveAlbumMaxPhotos(current);
+                const remaining = maxPhotos - current.photos.length;
+
+                if (remaining <= 0) {
+                  Alert.alert(
+                    'Límite alcanzado',
+                    `Tu álbum admite hasta ${maxPhotos} fotos.`,
+                  );
+                  return;
+                }
+
+                navigation.navigate('PhotoSelector', {
+                  maxPhotos: remaining,
+                  existingPhotos: current.photos,
+                  returnTo: 'Wow',
+                });
+              }}
               onSave={async () => {
                 const saved = await handleCloudSave();
                 if (saved) {
@@ -239,8 +280,29 @@ export function RootNavigator() {
           {({ navigation }) => (
             <EditorScreen
               albumTitle={album.currentAlbum?.title || 'Verano en la playa'}
-              photoCount={album.currentAlbum?.photoCount || 80}
+              photoCount={album.currentAlbum?.photos.length || 0}
               pageCount={album.currentAlbum?.pageCount || 28}
+              onAddPhotos={() => {
+                const current = store.getState().album.currentAlbum;
+                if (!current) return;
+
+                const maxPhotos = resolveAlbumMaxPhotos(current);
+                const remaining = maxPhotos - current.photos.length;
+
+                if (remaining <= 0) {
+                  Alert.alert(
+                    'Límite alcanzado',
+                    `Tu álbum admite hasta ${maxPhotos} fotos.`,
+                  );
+                  return;
+                }
+
+                navigation.navigate('PhotoSelector', {
+                  maxPhotos: remaining,
+                  existingPhotos: current.photos,
+                  returnTo: 'Editor',
+                });
+              }}
               onSave={async () => {
                 const saved = await handleCloudSave();
                 if (saved) navigation.navigate('MainTabs');
@@ -258,7 +320,7 @@ export function RootNavigator() {
               albumDate="15 de mayo del 2026"
               price={300}
               pageCount={album.currentAlbum?.pageCount || 28}
-              photoCount={album.currentAlbum?.photoCount || 80}
+              photoCount={album.currentAlbum?.photos.length || 0}
               remoteAlbumId={album.currentAlbum?.remoteId}
               onBack={() => navigation.goBack()}
               onConfirm={() => navigation.navigate('MainTabs')}
