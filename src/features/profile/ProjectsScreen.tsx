@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   View,
   Text,
@@ -8,14 +8,22 @@ import {
   Image,
   Alert,
 } from 'react-native';
+import { useFocusEffect } from '@react-navigation/native';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { albumService } from '@core/api';
 import type { Album } from '@core/api/types';
 import { getErrorMessage } from '@core/api/errors';
+import { useAppSelector } from '@core/store/hooks';
+import {
+  getLocalAlbumSummary,
+  LOCAL_ALBUM_ID,
+  type LocalAlbumSummary,
+} from '@core/storage/localAlbum';
 
 interface ProjectsScreenProps {
   onBack: () => void;
   onEdit: (projectId: string) => Promise<void>;
+  onCreateNew: () => void;
 }
 
 function formatRelativeDate(dateString?: string): string {
@@ -43,7 +51,11 @@ function getCoverUri(album: Album): string | null {
   return firstPhoto?.imagen ?? null;
 }
 
-export function ProjectsScreen({ onBack, onEdit }: ProjectsScreenProps) {
+export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenProps) {
+  const auth = useAppSelector(state => state.auth);
+  const currentAlbum = useAppSelector(state => state.album.currentAlbum);
+  const localAlbum = useMemo(() => getLocalAlbumSummary(currentAlbum), [currentAlbum]);
+
   const [albums, setAlbums] = useState<Album[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -51,6 +63,13 @@ export function ProjectsScreen({ onBack, onEdit }: ProjectsScreenProps) {
   const [deletingId, setDeletingId] = useState<string | null>(null);
 
   const loadProjects = useCallback(async () => {
+    if (!auth.isAuthenticated) {
+      setAlbums([]);
+      setError(null);
+      setIsLoading(false);
+      return;
+    }
+
     setIsLoading(true);
     setError(null);
 
@@ -62,11 +81,13 @@ export function ProjectsScreen({ onBack, onEdit }: ProjectsScreenProps) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [auth.isAuthenticated]);
 
-  useEffect(() => {
-    loadProjects();
-  }, [loadProjects]);
+  useFocusEffect(
+    useCallback(() => {
+      loadProjects();
+    }, [loadProjects]),
+  );
 
   const handleOpenProject = useCallback(
     async (projectId: string) => {
@@ -116,6 +137,7 @@ export function ProjectsScreen({ onBack, onEdit }: ProjectsScreenProps) {
 
   const recentProjects = useMemo(() => albums.slice(0, 1), [albums]);
   const otherProjects = useMemo(() => albums.slice(1), [albums]);
+  const showGuestProjects = !auth.isAuthenticated && Boolean(localAlbum);
 
   return (
     <View style={styles.container}>
@@ -125,58 +147,118 @@ export function ProjectsScreen({ onBack, onEdit }: ProjectsScreenProps) {
 
       <Text style={styles.title}>Tus proyectos{'\n'}guardados</Text>
 
-      {isLoading ? (
-        <View style={styles.centered}>
-          <ActivityIndicator color={colors.text.primary} />
-        </View>
-      ) : error ? (
-        <View style={styles.centered}>
-          <Text style={styles.error}>{error}</Text>
-          <TouchableOpacity onPress={loadProjects}>
-            <Text style={styles.retry}>Reintentar</Text>
-          </TouchableOpacity>
-        </View>
-      ) : albums.length === 0 ? (
-        <View style={styles.centered}>
-          <Text style={styles.empty}>Aún no tienes proyectos guardados.</Text>
-        </View>
-      ) : (
-        <>
-          {recentProjects.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Editado recientemente</Text>
-              {recentProjects.map(project => (
-                <ProjectCard
-                  key={project.unique_id}
-                  album={project}
-                  recent
-                  loading={openingId === project.unique_id}
-                  deleting={deletingId === project.unique_id}
-                  onPress={() => handleOpenProject(project.unique_id!)}
-                  onDelete={() => handleDeleteProject(project)}
-                />
-              ))}
-            </View>
-          )}
+      <TouchableOpacity
+        style={styles.createButton}
+        onPress={onCreateNew}
+        accessibilityRole="button"
+        accessibilityLabel="Crear nuevo álbum">
+        <Text style={styles.createButtonText}>+ Crear nuevo álbum</Text>
+      </TouchableOpacity>
 
-          {otherProjects.length > 0 && (
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Otros proyectos</Text>
-              {otherProjects.map(project => (
-                <ProjectCard
-                  key={project.unique_id}
-                  album={project}
-                  loading={openingId === project.unique_id}
-                  deleting={deletingId === project.unique_id}
-                  onPress={() => handleOpenProject(project.unique_id!)}
-                  onDelete={() => handleDeleteProject(project)}
-                />
-              ))}
-            </View>
-          )}
-        </>
-      )}
+      {showGuestProjects && localAlbum ? (
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>En este dispositivo</Text>
+          <LocalProjectCard
+            album={localAlbum}
+            loading={openingId === LOCAL_ALBUM_ID}
+            onPress={() => handleOpenProject(LOCAL_ALBUM_ID)}
+          />
+          <Text style={styles.guestHint}>
+            Inicia sesión para sincronizar este álbum y verlo en otros dispositivos.
+          </Text>
+        </View>
+      ) : null}
+
+      {auth.isAuthenticated ? (
+        isLoading ? (
+          <View style={styles.centered}>
+            <ActivityIndicator color={colors.text.primary} />
+          </View>
+        ) : error ? (
+          <View style={styles.centered}>
+            <Text style={styles.error}>{error}</Text>
+            <TouchableOpacity onPress={loadProjects}>
+              <Text style={styles.retry}>Reintentar</Text>
+            </TouchableOpacity>
+          </View>
+        ) : albums.length === 0 ? (
+          <View style={styles.centered}>
+            <Text style={styles.empty}>Aún no tienes proyectos en la nube.</Text>
+          </View>
+        ) : (
+          <>
+            {recentProjects.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Editado recientemente</Text>
+                {recentProjects.map(project => (
+                  <ProjectCard
+                    key={project.unique_id}
+                    album={project}
+                    recent
+                    loading={openingId === project.unique_id}
+                    deleting={deletingId === project.unique_id}
+                    onPress={() => handleOpenProject(project.unique_id!)}
+                    onDelete={() => handleDeleteProject(project)}
+                  />
+                ))}
+              </View>
+            )}
+
+            {otherProjects.length > 0 && (
+              <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Otros proyectos</Text>
+                {otherProjects.map(project => (
+                  <ProjectCard
+                    key={project.unique_id}
+                    album={project}
+                    loading={openingId === project.unique_id}
+                    deleting={deletingId === project.unique_id}
+                    onPress={() => handleOpenProject(project.unique_id!)}
+                    onDelete={() => handleDeleteProject(project)}
+                  />
+                ))}
+              </View>
+            )}
+          </>
+        )
+      ) : !showGuestProjects ? (
+        <View style={styles.centered}>
+          <Text style={styles.empty}>
+            Crea un álbum y se guardará aquí automáticamente, sin necesidad de cuenta.
+          </Text>
+        </View>
+      ) : null}
     </View>
+  );
+}
+
+function LocalProjectCard({
+  album,
+  loading,
+  onPress,
+}: {
+  album: LocalAlbumSummary;
+  loading?: boolean;
+  onPress: () => void;
+}) {
+  return (
+    <TouchableOpacity
+      style={[styles.projectCard, styles.projectCardRecent]}
+      onPress={onPress}
+      disabled={loading}>
+      {album.coverUri ? (
+        <Image source={{ uri: album.coverUri }} style={styles.projectThumb} />
+      ) : (
+        <View style={styles.projectThumb} />
+      )}
+      <View style={styles.projectInfo}>
+        <Text style={styles.projectTitle}>{album.title}</Text>
+        <Text style={styles.projectDate}>
+          {loading ? 'Abriendo...' : `${album.photoCount} fotos · ${album.pageCount} páginas`}
+        </Text>
+      </View>
+      {loading ? <ActivityIndicator color={colors.text.primary} /> : null}
+    </TouchableOpacity>
   );
 }
 
@@ -249,13 +331,28 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.bold,
     color: colors.text.primary,
     lineHeight: typography.sizes['3xl'] * typography.lineHeights.tight,
+    marginBottom: spacing.lg,
+  },
+  createButton: {
+    alignSelf: 'stretch',
+    backgroundColor: colors.text.primary,
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.md,
+    paddingHorizontal: spacing.xl,
+    alignItems: 'center',
     marginBottom: spacing['2xl'],
+  },
+  createButtonText: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.inverse,
   },
   centered: {
     flex: 1,
     alignItems: 'center',
     justifyContent: 'center',
     gap: spacing.md,
+    paddingHorizontal: spacing.lg,
   },
   error: {
     color: colors.error,
@@ -271,6 +368,13 @@ const styles = StyleSheet.create({
     color: colors.text.secondary,
     fontSize: typography.sizes.md,
     textAlign: 'center',
+    lineHeight: typography.sizes.md * 1.5,
+  },
+  guestHint: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+    lineHeight: typography.sizes.sm * 1.5,
+    marginTop: spacing.sm,
   },
   section: {
     marginBottom: spacing['2xl'],

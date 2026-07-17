@@ -9,10 +9,17 @@ const Stack = createNativeStackNavigator<ProfileStackParamList>();
 
 interface ProfileNavigatorProps {
   onEditProject: (projectId: string) => Promise<void>;
+  onCreateNewAlbum: () => void;
+  onLogin: () => void;
   onLogout: () => Promise<void>;
 }
 
-export function ProfileNavigator({ onEditProject, onLogout }: ProfileNavigatorProps) {
+export function ProfileNavigator({
+  onEditProject,
+  onCreateNewAlbum,
+  onLogin,
+  onLogout,
+}: ProfileNavigatorProps) {
   return (
     <Stack.Navigator
       screenOptions={{
@@ -25,6 +32,8 @@ export function ProfileNavigator({ onEditProject, onLogout }: ProfileNavigatorPr
             onNavigateOrders={() => navigation.navigate('Orders')}
             onNavigateProjects={() => navigation.navigate('Projects')}
             onNavigateAlbums={() => navigation.navigate('Projects')}
+            onCreateNewAlbum={onCreateNewAlbum}
+            onLogin={onLogin}
             onLogout={onLogout}
             onEditProfile={() => {}}
           />
@@ -47,6 +56,7 @@ export function ProfileNavigator({ onEditProject, onLogout }: ProfileNavigatorPr
           <ProjectsScreen
             onBack={() => navigation.goBack()}
             onEdit={onEditProject}
+            onCreateNew={onCreateNewAlbum}
           />
         )}
       </Stack.Screen>

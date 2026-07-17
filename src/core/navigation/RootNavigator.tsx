@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
 import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { Alert } from 'react-native';
@@ -14,14 +14,17 @@ import {
   finishCreation,
   hydrateAlbum,
   repairAlbum,
+  resetAlbum,
+  ensurePhotoCapacity,
 } from '@core/store/slices/albumSlice';
 import { resolveAlbumMaxPhotos } from '@core/store/albumUtils';
 import { loadSession } from '@core/storage/sessionStorage';
 import { hasSavedAlbum, syncPagesWithPhotos } from '@features/editor/storage';
-import { loadRemoteAlbumForEditor, saveAlbumToCloud, requestAlbumPdf } from '@core/api';
+import { loadRemoteAlbumForEditor, saveAlbumToCloud, albumNeedsCloudSync, syncLocalAlbumOnAuth } from '@core/api';
+import { getErrorMessage } from '@core/api/errors';
+import { isLocalAlbumId } from '@core/storage/localAlbum';
 import { clearSession } from '@core/storage/sessionStorage';
 import { logout } from '@core/store/slices/authSlice';
-import { resetAlbum } from '@core/store/slices/albumSlice';
 import { resetUser } from '@core/store/slices/userSlice';
 import { clearAlbumStorage } from '@features/editor/storage';
 
@@ -40,8 +43,10 @@ import { CheckoutScreen } from '@features/checkout/CheckoutScreen';
 import { LoginScreen } from '@features/auth/LoginScreen';
 import { RegisterScreen } from '@features/auth/RegisterScreen';
 import { ProfileNavigator } from './ProfileNavigator';
+import { AlbumSyncOverlay } from '@shared/components';
 
 import type { RootStackParamList } from './types';
+import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
@@ -49,7 +54,9 @@ async function resolveInitialRoute(): Promise<keyof RootStackParamList> {
   const [session, savedAlbum] = await Promise.all([loadSession(), hasSavedAlbum()]);
 
   if (savedAlbum) return 'Editor';
-  if (session?.album.currentAlbum && !session.album.isCreating) return 'Wow';
+  if (session?.album.currentAlbum) {
+    return session.album.isCreating ? 'Creating' : 'Wow';
+  }
   if (session?.user.isOnboarded) return 'MainTabs';
   return 'Presentation';
 }
@@ -58,17 +65,116 @@ export function RootNavigator() {
   const [showSplash, setShowSplash] = useState(true);
   const [isReady, setIsReady] = useState(false);
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Presentation');
+  const [syncOverlay, setSyncOverlay] = useState({
+    visible: false,
+    step: 'Preparando...',
+    progress: 0,
+  });
+  const syncInFlightRef = useRef(false);
   const dispatch = useAppDispatch();
   const user = useAppSelector(state => state.user);
   const album = useAppSelector(state => state.album);
 
-  const handleCloudSave = useCallback(async () => {
-    return saveAlbumToCloud(dispatch, () => store.getState());
-  }, [dispatch]);
+  const updateSyncOverlay = useCallback((step: string, progress: number) => {
+    setSyncOverlay(prev => {
+      if (prev.visible && prev.step === step && prev.progress === progress) {
+        return prev;
+      }
+      return { visible: true, step, progress };
+    });
+  }, []);
 
-  const handleGeneratePdf = useCallback(async () => {
-    return requestAlbumPdf(dispatch, () => store.getState());
-  }, [dispatch]);
+  const handlePersistAlbum = useCallback(
+    async (options?: { showOverlay?: boolean; silentAlert?: boolean }) => {
+      const state = store.getState();
+      const hasAlbum = Boolean(state.album.currentAlbum);
+      if (!hasAlbum) return false;
+
+      const isAuthenticated = state.auth.isAuthenticated;
+      const showOverlay = Boolean(options?.showOverlay && isAuthenticated);
+
+      try {
+        if (showOverlay) {
+          setSyncOverlay({
+            visible: true,
+            step: 'Guardando en la nube',
+            progress: 0,
+          });
+        }
+
+        const ok = await saveAlbumToCloud(
+          dispatch,
+          () => store.getState(),
+          undefined,
+          {
+            onProgress: showOverlay ? updateSyncOverlay : undefined,
+          },
+        );
+
+        if (options?.silentAlert) {
+          return isAuthenticated ? ok : true;
+        }
+
+        if (!isAuthenticated) {
+          Alert.alert(
+            'Guardado en el dispositivo',
+            'Tu álbum quedó guardado aquí. Inicia sesión cuando quieras sincronizarlo a la nube.',
+          );
+          return true;
+        }
+
+        if (ok) {
+          Alert.alert('Guardado', 'Tu álbum se sincronizó correctamente.');
+          return true;
+        }
+
+        return false;
+      } finally {
+        if (showOverlay) {
+          setSyncOverlay({ visible: false, step: '', progress: 0 });
+        }
+      }
+    },
+    [dispatch, updateSyncOverlay],
+  );
+
+  const handleAuthSuccess = useCallback(
+    async (navigation: NativeStackNavigationProp<RootStackParamList>) => {
+      if (syncInFlightRef.current) return;
+      syncInFlightRef.current = true;
+
+      try {
+        if (albumNeedsCloudSync(store.getState())) {
+          setSyncOverlay({ visible: true, step: 'Preparando sincronización', progress: 0 });
+
+          try {
+            await syncLocalAlbumOnAuth(dispatch, () => store.getState(), {
+              onProgress: updateSyncOverlay,
+            });
+            Alert.alert(
+              'Álbum sincronizado',
+              'Tu álbum local ya está disponible en tu cuenta.',
+            );
+          } catch (error) {
+            Alert.alert(
+              'Sincronización pendiente',
+              getErrorMessage(
+                error,
+                'Tu sesión está activa, pero el álbum no se pudo subir. Usa Guardar para reintentar.',
+              ),
+            );
+          } finally {
+            setSyncOverlay({ visible: false, step: '', progress: 0 });
+          }
+        }
+
+        navigation.navigate('MainTabs');
+      } finally {
+        syncInFlightRef.current = false;
+      }
+    },
+    [dispatch, updateSyncOverlay],
+  );
 
   const handleLogout = useCallback(async () => {
     dispatch(logout());
@@ -76,6 +182,62 @@ export function RootNavigator() {
     dispatch(resetAlbum());
     await Promise.all([clearSession(), clearAlbumStorage()]);
   }, [dispatch]);
+
+  const handleCreateNewAlbum = useCallback(
+    (navigation: NativeStackNavigationProp<RootStackParamList>) => {
+      const startFresh = async () => {
+        dispatch(resetAlbum());
+        await clearAlbumStorage();
+        navigation.navigate('PhotoCount');
+      };
+
+      const hasAlbum = Boolean(store.getState().album.currentAlbum?.photos.length);
+      if (!hasAlbum) {
+        void startFresh();
+        return;
+      }
+
+      Alert.alert(
+        'Crear nuevo álbum',
+        'Vas a empezar un álbum nuevo. El actual queda guardado en Mis proyectos (si ya lo sincronizaste).',
+        [
+          { text: 'Cancelar', style: 'cancel' },
+          { text: 'Crear nuevo', onPress: () => void startFresh() },
+        ],
+      );
+    },
+    [dispatch],
+  );
+
+  const openAddPhotos = useCallback(
+    (
+      navigation: NativeStackNavigationProp<RootStackParamList>,
+      returnTo: 'Wow' | 'Editor',
+    ) => {
+      // Unlock legacy albums where maxPhotos == photos.length (e.g. 18/18)
+      dispatch(ensurePhotoCapacity());
+      const current = store.getState().album.currentAlbum;
+      if (!current) return;
+
+      const maxPhotos = resolveAlbumMaxPhotos(current);
+      const remaining = maxPhotos - current.photos.length;
+
+      if (remaining <= 0) {
+        Alert.alert(
+          'Límite del álbum',
+          `Elegiste un álbum de ${maxPhotos} fotos y ya están llenas. No puedes agregar más en este paquete.`,
+        );
+        return;
+      }
+
+      navigation.navigate('PhotoSelector', {
+        maxPhotos: remaining,
+        existingPhotos: current.photos,
+        returnTo,
+      });
+    },
+    [dispatch],
+  );
 
   const handleSplashFinish = useCallback(() => {
     setShowSplash(false);
@@ -120,13 +282,14 @@ export function RootNavigator() {
   }
 
   return (
-    <NavigationContainer>
-      <Stack.Navigator
-        screenOptions={{
-          headerShown: false,
-          animation: 'slide_from_right',
-        }}
-        initialRouteName={initialRoute}>
+    <>
+      <NavigationContainer>
+        <Stack.Navigator
+          screenOptions={{
+            headerShown: false,
+            animation: 'slide_from_right',
+          }}
+          initialRouteName={initialRoute}>
         {/* Onboarding flow */}
         <Stack.Screen name="Presentation">
           {({ navigation }) => (
@@ -141,7 +304,9 @@ export function RootNavigator() {
           {({ navigation }) => (
             <LoginScreen
               onBack={() => navigation.goBack()}
-              onSuccess={() => navigation.navigate('MainTabs')}
+              onSuccess={() => {
+                void handleAuthSuccess(navigation);
+              }}
               onRegister={() => navigation.navigate('Register')}
             />
           )}
@@ -151,7 +316,9 @@ export function RootNavigator() {
           {({ navigation }) => (
             <RegisterScreen
               onBack={() => navigation.goBack()}
-              onSuccess={() => navigation.navigate('MainTabs')}
+              onSuccess={() => {
+                void handleAuthSuccess(navigation);
+              }}
               onLogin={() => navigation.navigate('Login')}
             />
           )}
@@ -239,38 +406,11 @@ export function RootNavigator() {
               albumTitle={album.currentAlbum?.title || 'Verano en la playa'}
               photoCount={album.currentAlbum?.photos.length || 0}
               pageCount={album.currentAlbum?.pageCount || 28}
-              hasRemoteAlbum={Boolean(album.currentAlbum?.remoteId)}
               onEdit={() => navigation.navigate('Editor')}
               onBuy={() => navigation.navigate('Checkout')}
-              onAddPhotos={() => {
-                const current = store.getState().album.currentAlbum;
-                if (!current) return;
-
-                const maxPhotos = resolveAlbumMaxPhotos(current);
-                const remaining = maxPhotos - current.photos.length;
-
-                if (remaining <= 0) {
-                  Alert.alert(
-                    'Límite alcanzado',
-                    `Tu álbum admite hasta ${maxPhotos} fotos.`,
-                  );
-                  return;
-                }
-
-                navigation.navigate('PhotoSelector', {
-                  maxPhotos: remaining,
-                  existingPhotos: current.photos,
-                  returnTo: 'Wow',
-                });
-              }}
+              onAddPhotos={() => openAddPhotos(navigation, 'Wow')}
               onSave={async () => {
-                const saved = await handleCloudSave();
-                if (saved) {
-                  Alert.alert('Guardado', 'Tu álbum se sincronizó correctamente.');
-                }
-              }}
-              onGeneratePdf={async () => {
-                await handleGeneratePdf();
+                await handlePersistAlbum({ showOverlay: true });
               }}
             />
           )}
@@ -282,30 +422,11 @@ export function RootNavigator() {
               albumTitle={album.currentAlbum?.title || 'Verano en la playa'}
               photoCount={album.currentAlbum?.photos.length || 0}
               pageCount={album.currentAlbum?.pageCount || 28}
-              onAddPhotos={() => {
-                const current = store.getState().album.currentAlbum;
-                if (!current) return;
-
-                const maxPhotos = resolveAlbumMaxPhotos(current);
-                const remaining = maxPhotos - current.photos.length;
-
-                if (remaining <= 0) {
-                  Alert.alert(
-                    'Límite alcanzado',
-                    `Tu álbum admite hasta ${maxPhotos} fotos.`,
-                  );
-                  return;
-                }
-
-                navigation.navigate('PhotoSelector', {
-                  maxPhotos: remaining,
-                  existingPhotos: current.photos,
-                  returnTo: 'Editor',
-                });
-              }}
+              onAddPhotos={() => openAddPhotos(navigation, 'Editor')}
               onSave={async () => {
-                const saved = await handleCloudSave();
-                if (saved) navigation.navigate('MainTabs');
+                // Local ya flushed en Editor. Ir a perfil ya; sync nube con overlay.
+                navigation.navigate('MainTabs');
+                await handlePersistAlbum({ showOverlay: true });
               }}
               onBuy={() => navigation.navigate('Checkout')}
               onBack={() => navigation.goBack()}
@@ -333,9 +454,15 @@ export function RootNavigator() {
           {({ navigation }) => (
             <ProfileNavigator
               onEditProject={async (projectId: string) => {
+                if (isLocalAlbumId(projectId)) {
+                  navigation.navigate('Editor');
+                  return;
+                }
                 await loadRemoteAlbumForEditor(projectId, dispatch);
                 navigation.navigate('Editor');
               }}
+              onCreateNewAlbum={() => handleCreateNewAlbum(navigation)}
+              onLogin={() => navigation.navigate('Login')}
               onLogout={async () => {
                 await handleLogout();
                 navigation.reset({
@@ -348,5 +475,11 @@ export function RootNavigator() {
         </Stack.Screen>
       </Stack.Navigator>
     </NavigationContainer>
+    <AlbumSyncOverlay
+      visible={syncOverlay.visible}
+      step={syncOverlay.step}
+      progress={syncOverlay.progress}
+    />
+    </>
   );
 }

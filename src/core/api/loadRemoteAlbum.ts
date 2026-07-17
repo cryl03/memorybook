@@ -1,9 +1,12 @@
 import type { AppDispatch } from '@core/store';
+import { resolvePackageCapacity, pagesForPhotoCount } from '@core/store/albumUtils';
 import { loadFromRemote } from '@core/store/slices/albumSlice';
 import {
   clearAlbumStorage,
   saveAlbumPages,
   saveAlbumTitle,
+  loadCoverText,
+  saveCoverText,
 } from '@features/editor/storage';
 import { distributePhotosToPages } from '@features/editor/utils';
 import type { LayoutType, PageData } from '@features/editor/types';
@@ -25,13 +28,25 @@ export async function loadRemoteAlbumForEditor(
     }
   });
 
-  const pageCount = Math.max(1, Math.ceil(photoUris.length / 3));
+  const pageCount = pagesForPhotoCount(photoUris.length);
+  const maxPhotos = resolvePackageCapacity(photoUris.length);
+
+  // Restore cover text: local storage first, then album.descripcion from API (web)
+  const savedCoverText =
+    (await loadCoverText(albumId)) ||
+    (await loadCoverText('local')) ||
+    (album.descripcion ?? '').trim() ||
+    '';
 
   const coverPage: PageData = {
     id: 'page-cover',
     photos: [],
     layout: 'single' as LayoutType,
-    text: { content: '', fontSize: 14, alignment: 'center' },
+    text: {
+      content: savedCoverText,
+      fontSize: 14,
+      alignment: 'center',
+    },
     stickers: [],
   };
 
@@ -40,16 +55,21 @@ export async function loadRemoteAlbumForEditor(
   await clearAlbumStorage();
   await saveAlbumPages([coverPage, ...distributed]);
   await saveAlbumTitle(album.nombre);
+  if (savedCoverText) {
+    await saveCoverText(albumId, savedCoverText);
+    await saveCoverText('local', savedCoverText);
+  }
 
   dispatch(
     loadFromRemote({
       title: album.nombre,
-      photoCount: photoUris.length,
-      maxPhotos: photoUris.length,
+      photoCount: maxPhotos,
+      maxPhotos,
       pageCount,
       photos: photoUris,
       style: '',
       story: album.descripcion ?? '',
+      coverText: savedCoverText,
       remoteId: album.unique_id ?? albumId,
       remoteFotos,
     }),

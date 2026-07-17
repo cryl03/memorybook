@@ -14,11 +14,14 @@ import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { useAppSelector } from '@core/store/hooks';
 import { albumService } from '@core/api';
+import { getLocalAlbumSummary } from '@core/storage/localAlbum';
 
 interface ProfileScreenProps {
   onNavigateOrders: () => void;
   onNavigateProjects: () => void;
   onNavigateAlbums: () => void;
+  onCreateNewAlbum: () => void;
+  onLogin: () => void;
   onLogout: () => void;
   onEditProfile: () => void;
 }
@@ -27,6 +30,8 @@ export function ProfileScreen({
   onNavigateOrders,
   onNavigateProjects,
   onNavigateAlbums,
+  onCreateNewAlbum,
+  onLogin,
   onLogout,
   onEditProfile,
 }: ProfileScreenProps) {
@@ -34,13 +39,16 @@ export function ProfileScreen({
   const [albumCount, setAlbumCount] = useState(0);
   const auth = useAppSelector(state => state.auth);
   const user = useAppSelector(state => state.user);
+  const currentAlbum = useAppSelector(state => state.album.currentAlbum);
+  const localAlbum = getLocalAlbumSummary(currentAlbum);
+  const localAlbumCount = localAlbum ? 1 : 0;
 
   const displayName = user.name || auth.username || 'Usuario';
   const avatarLetter = displayName.charAt(0).toUpperCase();
 
   const loadStats = useCallback(async () => {
     if (!auth.isAuthenticated) {
-      setAlbumCount(0);
+      setAlbumCount(localAlbumCount);
       return;
     }
 
@@ -48,9 +56,9 @@ export function ProfileScreen({
       const response = await albumService.listAlbums();
       setAlbumCount(response.count);
     } catch {
-      setAlbumCount(0);
+      setAlbumCount(localAlbumCount);
     }
-  }, [auth.isAuthenticated]);
+  }, [auth.isAuthenticated, localAlbumCount]);
 
   useFocusEffect(
     useCallback(() => {
@@ -86,7 +94,9 @@ export function ProfileScreen({
         <View style={styles.statsRow}>
           <View style={styles.statBox}>
             <Text style={styles.statNumber}>{albumCount}</Text>
-            <Text style={styles.statLabel}>Álbumes creados</Text>
+            <Text style={styles.statLabel}>
+              {auth.isAuthenticated ? 'Álbumes creados' : 'Álbumes en el dispositivo'}
+            </Text>
           </View>
           <View style={styles.statBox}>
             <Text style={styles.statNumber}>—</Text>
@@ -96,6 +106,13 @@ export function ProfileScreen({
       </View>
 
       <View style={styles.menuSection}>
+        <TouchableOpacity
+          style={styles.createAlbumButton}
+          onPress={onCreateNewAlbum}
+          accessibilityRole="button"
+          accessibilityLabel="Crear nuevo álbum">
+          <Text style={styles.createAlbumText}>+ Crear nuevo álbum</Text>
+        </TouchableOpacity>
         <MenuItem
           icon="book"
           label="Mis álbumes"
@@ -136,7 +153,14 @@ export function ProfileScreen({
               <Text style={styles.logoutLabel}>Cerrar sesión</Text>
             </View>
           </TouchableOpacity>
-        ) : null}
+        ) : (
+          <TouchableOpacity style={styles.loginCard} onPress={onLogin}>
+            <Text style={styles.loginTitle}>Inicia sesión</Text>
+            <Text style={styles.loginSubtitle}>
+              Sube tu álbum local a la nube y compra cuando quieras.
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     </ScrollView>
   );
@@ -252,6 +276,18 @@ const styles = StyleSheet.create({
     paddingTop: spacing.xl,
     gap: spacing.sm,
   },
+  createAlbumButton: {
+    backgroundColor: colors.text.primary,
+    borderRadius: borderRadius.full,
+    paddingVertical: spacing.md,
+    alignItems: 'center',
+    marginBottom: spacing.sm,
+  },
+  createAlbumText: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.inverse,
+  },
   menuItem: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -272,6 +308,23 @@ const styles = StyleSheet.create({
   logoutLabel: {
     fontSize: typography.sizes.md,
     color: colors.error,
+  },
+  loginCard: {
+    marginTop: spacing.lg,
+    padding: spacing.xl,
+    borderRadius: borderRadius.lg,
+    backgroundColor: colors.surfaceSecondary,
+    gap: spacing.xs,
+  },
+  loginTitle: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.primary,
+  },
+  loginSubtitle: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+    lineHeight: typography.sizes.sm * 1.5,
   },
   menuItemRight: {
     flexDirection: 'row',

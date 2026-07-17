@@ -10,3 +10,6 @@ export const botImage = require('./bot.png');
 
 // Onboarding name step background
 export const onboardingNameBg = require('./onboarding-name-bg.png');
+
+// Splash (exact Figma export)
+export const splashFigma = require('./splash-figma.png');

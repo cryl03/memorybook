@@ -38,8 +38,8 @@ export function CheckoutScreen({
   const handleConfirm = async () => {
     if (!remoteAlbumId) {
       Alert.alert(
-        'Álbum no sincronizado',
-        'Inicia sesión y crea el álbum de nuevo para generar el PDF antes de comprar.',
+        'Álbum en el dispositivo',
+        'Inicia sesión para sincronizar tu álbum y completar la compra.',
       );
       return;
     }
@@ -52,7 +52,7 @@ export function CheckoutScreen({
 
       Alert.alert(
         'Pedido confirmado',
-        'Tu álbum fue enviado a producción. El PDF se generó correctamente.',
+        'Tu álbum fue enviado a producción.',
         [{ text: 'OK', onPress: onConfirm }],
       );
     } catch (error) {
@@ -111,7 +111,7 @@ export function CheckoutScreen({
 
       {!remoteAlbumId ? (
         <Text style={styles.syncWarning}>
-          Este álbum aún no está en la nube. Inicia sesión para sincronizarlo.
+          Tu álbum está guardado en este dispositivo. Inicia sesión para sincronizarlo y completar la compra.
         </Text>
       ) : null}
 

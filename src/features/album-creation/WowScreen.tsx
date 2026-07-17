@@ -12,39 +12,32 @@ interface WowScreenProps {
   albumTitle: string;
   photoCount?: number;
   pageCount: number;
-  hasRemoteAlbum?: boolean;
   onEdit: () => void;
   onBuy: () => void;
   onSave: () => void | Promise<void>;
   onAddPhotos: () => void;
-  onGeneratePdf?: () => void | Promise<void>;
 }
 
 export function WowScreen({
   albumTitle,
   pageCount,
-  hasRemoteAlbum = false,
   onEdit,
   onBuy,
   onSave,
   onAddPhotos,
-  onGeneratePdf,
 }: WowScreenProps) {
   const dispatch = useAppDispatch();
   const [isSaving, setIsSaving] = React.useState(false);
-  const [isGeneratingPdf, setIsGeneratingPdf] = React.useState(false);
-  const [currentPage, setCurrentPage] = React.useState(1);
   const album = useAppSelector(state => state.album);
   const photos = album.currentAlbum?.photos || [];
+  const coverPhoto = photos[0] || null;
 
   React.useEffect(() => {
     dispatch(repairAlbum());
   }, [dispatch]);
 
-  const goToPrev = () => setCurrentPage(Math.max(1, currentPage - 1));
-  const goToNext = () => setCurrentPage(Math.min(pageCount, currentPage + 1));
-
   const handleSave = async () => {
+    if (isSaving) return;
     setIsSaving(true);
     try {
       await onSave();
@@ -53,34 +46,17 @@ export function WowScreen({
     }
   };
 
-  const handleGeneratePdf = async () => {
-    if (!onGeneratePdf) return;
-    setIsGeneratingPdf(true);
-    try {
-      await onGeneratePdf();
-    } finally {
-      setIsGeneratingPdf(false);
-    }
-  };
-
-  // Get the photo for the current page preview
-  const photosPerPage = Math.ceil(photos.length / pageCount);
-  const pageStartIndex = (currentPage - 1) * photosPerPage;
-  const currentPagePhoto = photos[pageStartIndex] || photos[0] || null;
-
   return (
     <LinearGradient
       colors={['#FAF7F2', '#FAF7F2']}
       style={styles.container}>
-      {/* Album book preview */}
+      {/* Closed cover only — no glow circle */}
       <View style={styles.bookWrapper}>
-        <View style={styles.bookGlow} />
         <View style={styles.bookCover}>
-          {/* Photo on cover - changes per page */}
           <View style={styles.bookPhotoFrame}>
-            {currentPagePhoto ? (
+            {coverPhoto ? (
               <Image
-                source={{ uri: currentPagePhoto }}
+                source={{ uri: coverPhoto }}
                 style={styles.bookPhoto}
                 resizeMode="cover"
               />
@@ -88,7 +64,6 @@ export function WowScreen({
               <View style={styles.bookPhotoPlaceholder} />
             )}
           </View>
-          {/* Cursive text on cover */}
           <View style={styles.bookTextLines}>
             <View style={styles.textLine} />
             <View style={[styles.textLine, { width: '70%' }]} />
@@ -97,7 +72,6 @@ export function WowScreen({
         </View>
       </View>
 
-      {/* Album info */}
       <Text style={styles.albumTitle}>{albumTitle}</Text>
       <View style={styles.metaRow}>
         <Text style={styles.albumMeta}>
@@ -112,48 +86,43 @@ export function WowScreen({
         </TouchableOpacity>
       </View>
 
-      {/* Spacer */}
       <View style={styles.spacer} />
 
-      {/* Page navigation */}
+      {/* Portada → next opens editor (open book) */}
       <View style={styles.pageNav}>
         <TouchableOpacity
-          onPress={goToPrev}
-          disabled={currentPage === 1}
+          disabled
           style={styles.navArrow}
-          accessibilityLabel="Página anterior"
-          accessibilityRole="button">
+          accessibilityLabel="Portada">
           <Image
             source={icons['arrow-right']}
             style={{
               width: 20,
               height: 20,
-              tintColor: currentPage === 1 ? colors.text.tertiary : colors.text.primary,
+              tintColor: colors.text.tertiary,
               transform: [{ rotate: '180deg' }],
             }}
             resizeMode="contain"
           />
         </TouchableOpacity>
-        <Text style={styles.pageIndicator}>{currentPage} de {pageCount}</Text>
+        <Text style={styles.pageIndicator}>Portada</Text>
         <TouchableOpacity
-          onPress={goToNext}
-          disabled={currentPage === pageCount}
+          onPress={onEdit}
           style={styles.navArrow}
-          accessibilityLabel="Página siguiente"
+          accessibilityLabel="Abrir álbum"
           accessibilityRole="button">
           <Image
             source={icons['arrow-right']}
             style={{
               width: 20,
               height: 20,
-              tintColor: currentPage === pageCount ? colors.text.tertiary : colors.text.primary,
+              tintColor: colors.text.primary,
             }}
             resizeMode="contain"
           />
         </TouchableOpacity>
       </View>
 
-      {/* Action buttons */}
       <View style={styles.bottomActions}>
         <TouchableOpacity style={styles.buyButton} onPress={onBuy}>
           <Text style={styles.buyButtonText}>Llevarlo conmigo - $300</Text>
@@ -173,18 +142,6 @@ export function WowScreen({
         </TouchableOpacity>
       </View>
 
-      {hasRemoteAlbum && onGeneratePdf ? (
-        <TouchableOpacity
-          onPress={handleGeneratePdf}
-          style={styles.pdfLink}
-          disabled={isGeneratingPdf}>
-          <Text style={styles.pdfLinkText}>
-            {isGeneratingPdf ? 'Generando PDF...' : 'Generar PDF'}
-          </Text>
-        </TouchableOpacity>
-      ) : null}
-
-      {/* Edit link */}
       <TouchableOpacity onPress={onEdit} style={styles.editLink}>
         <Text style={styles.editLinkText}>Editar</Text>
       </TouchableOpacity>
@@ -198,19 +155,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingTop: spacing['4xl'],
   },
-  // Book
   bookWrapper: {
     alignItems: 'center',
     marginBottom: spacing['3xl'],
-    position: 'relative',
-  },
-  bookGlow: {
-    position: 'absolute',
-    top: '10%',
-    width: width * 0.7,
-    height: width * 0.7,
-    borderRadius: width * 0.35,
-    backgroundColor: 'rgba(168, 196, 217, 0.35)',
   },
   bookCover: {
     width: width * 0.58,
@@ -254,7 +201,6 @@ const styles = StyleSheet.create({
     backgroundColor: 'rgba(0,0,0,0.15)',
     borderRadius: 1,
   },
-  // Info
   albumTitle: {
     fontSize: typography.sizes['3xl'],
     fontWeight: typography.weights.bold,
@@ -286,7 +232,6 @@ const styles = StyleSheet.create({
   spacer: {
     flex: 1,
   },
-  // Page nav
   pageNav: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -305,7 +250,6 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     fontWeight: typography.weights.regular,
   },
-  // Bottom
   bottomActions: {
     flexDirection: 'row',
     paddingHorizontal: spacing['3xl'],
@@ -357,15 +301,6 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.md,
     fontWeight: typography.weights.bold,
     color: colors.text.primary,
-    textDecorationLine: 'underline',
-  },
-  pdfLink: {
-    alignItems: 'center',
-    marginBottom: spacing.md,
-  },
-  pdfLinkText: {
-    fontSize: typography.sizes.sm,
-    color: colors.text.secondary,
     textDecorationLine: 'underline',
   },
 });

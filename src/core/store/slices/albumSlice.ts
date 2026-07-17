@@ -1,5 +1,5 @@
 import { createSlice, PayloadAction } from '@reduxjs/toolkit';
-import { normalizeCurrentAlbum } from '../albumUtils';
+import { normalizeCurrentAlbum, pagesForPhotoCount } from '../albumUtils';
 
 export interface AlbumState {
   currentAlbum: {
@@ -10,6 +10,8 @@ export interface AlbumState {
     photos: string[];
     style: string;
     story: string;
+    /** Texto de portada — se sincroniza como `descripcion` del álbum en la API */
+    coverText?: string;
     remoteId?: string;
     remoteFotos?: Record<string, string>;
   } | null;
@@ -42,7 +44,7 @@ const albumSlice = createSlice({
         title: '',
         photoCount: action.payload.photoCount,
         maxPhotos: action.payload.photoCount,
-        pageCount: Math.ceil(action.payload.photoCount / 3),
+        pageCount: pagesForPhotoCount(action.payload.photoCount),
         photos: [],
         style: action.payload.style,
         story: action.payload.story,
@@ -71,9 +73,37 @@ const albumSlice = createSlice({
         delete state.currentAlbum.remoteFotos[action.payload];
       }
     },
+    replacePhoto(
+      state,
+      action: PayloadAction<{ oldUri: string; newUri: string }>,
+    ) {
+      if (!state.currentAlbum) return;
+
+      const { oldUri, newUri } = action.payload;
+      if (oldUri === newUri) return;
+
+      state.currentAlbum.photos = state.currentAlbum.photos.map(uri =>
+        uri === oldUri ? newUri : uri,
+      );
+
+      if (state.currentAlbum.remoteFotos?.[oldUri]) {
+        const { [oldUri]: _removed, ...rest } = state.currentAlbum.remoteFotos;
+        state.currentAlbum.remoteFotos = rest;
+      }
+    },
     setTitle(state, action: PayloadAction<string>) {
       if (state.currentAlbum) {
         state.currentAlbum.title = action.payload;
+      }
+    },
+    setCoverText(state, action: PayloadAction<string>) {
+      if (state.currentAlbum) {
+        state.currentAlbum.coverText = action.payload;
+      }
+    },
+    setStory(state, action: PayloadAction<string>) {
+      if (state.currentAlbum) {
+        state.currentAlbum.story = action.payload;
       }
     },
     finishCreation(state) {
@@ -121,6 +151,7 @@ const albumSlice = createSlice({
         photos: string[];
         style: string;
         story: string;
+        coverText?: string;
         remoteId: string;
         remoteFotos?: Record<string, string>;
       }>,
@@ -128,6 +159,7 @@ const albumSlice = createSlice({
       state.currentAlbum = {
         ...action.payload,
         maxPhotos: action.payload.maxPhotos ?? action.payload.photoCount,
+        coverText: action.payload.coverText ?? action.payload.story ?? '',
       };
       state.isCreating = false;
       state.syncError = null;
@@ -144,6 +176,11 @@ const albumSlice = createSlice({
         state.currentAlbum = normalizeCurrentAlbum(state.currentAlbum);
       }
     },
+    /** Unlock capacity when maxPhotos was frozen at current photo count */
+    ensurePhotoCapacity(state) {
+      if (!state.currentAlbum) return;
+      state.currentAlbum = normalizeCurrentAlbum(state.currentAlbum);
+    },
   },
 });
 
@@ -153,7 +190,10 @@ export const {
   setPhotos,
   appendPhotos,
   removePhoto,
+  replacePhoto,
   setTitle,
+  setCoverText,
+  setStory,
   finishCreation,
   setRemoteAlbumId,
   setRemoteFotos,
@@ -163,6 +203,7 @@ export const {
   resetAlbum,
   hydrateAlbum,
   repairAlbum,
+  ensurePhotoCapacity,
 } = albumSlice.actions;
 
 export default albumSlice.reducer;

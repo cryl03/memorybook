@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -27,11 +27,16 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
+  const authHandledRef = useRef(false);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      onSuccess();
+    if (!isAuthenticated) {
+      authHandledRef.current = false;
+      return;
     }
+    if (authHandledRef.current) return;
+    authHandledRef.current = true;
+    onSuccess();
   }, [isAuthenticated, onSuccess]);
 
   const handleRegister = () => {

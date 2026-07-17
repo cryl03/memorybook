@@ -23,5 +23,7 @@ export {
   deleteRemotePhoto,
   syncAlbumToCloud,
 } from './albumSync';
-export { saveAlbumToCloud, requestAlbumPdf } from './saveAlbumToCloud';
+export { saveAlbumToCloud } from './saveAlbumToCloud';
+export { albumNeedsCloudSync, syncLocalAlbumOnAuth } from './syncLocalAlbumOnAuth';
+export type { SyncProgressHandler } from './syncLocalAlbumOnAuth';
 export type { SyncAlbumOptions, SyncAlbumResult } from './syncAlbum';

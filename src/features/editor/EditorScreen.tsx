@@ -7,7 +7,6 @@ import {
   TouchableWithoutFeedback,
   ScrollView,
   TextInput,
-  Dimensions,
   Image,
   Platform,
   PermissionsAndroid,
@@ -19,26 +18,47 @@ import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
 import { useAppDispatch, useAppSelector } from '@core/store/hooks';
-import { removePhoto } from '@core/store/slices/albumSlice';
+import { store } from '@core/store';
+import {
+  removePhoto,
+  replacePhoto,
+  appendPhotos,
+  setTitle as setAlbumTitle,
+  setCoverText,
+} from '@core/store/slices/albumSlice';
 import { deleteRemotePhoto } from '@core/api';
 import { getErrorMessage } from '@core/api/errors';
 import { PhotoActionSheet } from './components/PhotoActionSheet';
+import { OpenBookSpread, ClosedBookCover } from './components/OpenBookSpread';
+import { ReplacePhotoPicker } from './components/ReplacePhotoPicker';
+import { FilterPickerModal } from './components/FilterPickerModal';
+import { BookPageCurl } from './components/BookPageCurl';
 import LinearGradient from 'react-native-linear-gradient';
 import Geolocation from '@react-native-community/geolocation';
-import { PageData, LayoutType, PagePhoto } from './types';
+import { PageData, LayoutType, FilterType, PagePhoto } from './types';
 import { reverseGeocode } from './geocoding';
-import { distributePhotosToPages } from './utils';
-import { saveAlbumPages, loadAlbumPages, saveAlbumTitle, loadAlbumTitle } from './storage';
+import {
+  distributePhotosToPages,
+  placePhotosAcrossPages,
+  countAvailablePhotoSlots,
+  ensureAllPhotosOnPages,
+} from './utils';
+import {
+  saveAlbumPages,
+  loadAlbumPages,
+  loadAlbumTitle,
+  persistEditorState,
+  loadCoverText,
+  getCoverTextFromPages,
+} from './storage';
 
-const { width } = Dimensions.get('window');
-const PHOTO_GAP = spacing.sm;
 const EMPTY_PHOTOS: string[] = [];
 
 interface EditorScreenProps {
   albumTitle: string;
   photoCount: number;
   pageCount: number;
-  onSave: () => void;
+  onSave: () => void | Promise<void>;
   onBuy: () => void;
   onBack: () => void;
   onAddPhotos: () => void;
@@ -64,15 +84,23 @@ export function EditorScreen({
   const [currentPage, setCurrentPage] = useState(0);
   const [title, setTitle] = useState(albumTitle);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
-  const [activeTab, setActiveTab] = useState<EditorTab>('datos');
+  const [activeTab, setActiveTab] = useState<EditorTab>('textos');
   const [showLocationInput, setShowLocationInput] = useState(false);
   const [locationText, setLocationText] = useState('');
   const [isLoadingLocation, setIsLoadingLocation] = useState(false);
   const [selectedPhotoIndex, setSelectedPhotoIndex] = useState<number | null>(null);
   const [showPhotoActions, setShowPhotoActions] = useState(false);
+  const [showFilterPicker, setShowFilterPicker] = useState(false);
+  const [showReplacePicker, setShowReplacePicker] = useState(false);
+  const [showFillEmptyPicker, setShowFillEmptyPicker] = useState(false);
+  const [fillEmptyPageIndex, setFillEmptyPageIndex] = useState<number | null>(null);
   const [isDeletingPhoto, setIsDeletingPhoto] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
   const locationRequestRef = useRef(0);
   const photosCountRef = useRef(photos.length);
+  const skipNextPhotosSyncRef = useRef(false);
+
+  const albumKey = album.currentAlbum?.remoteId || 'local';
 
   // Initialize pages once: load from storage or distribute from photos
   useEffect(() => {
@@ -81,11 +109,34 @@ export function EditorScreen({
     const initPages = async () => {
       const savedPages = await loadAlbumPages();
       const savedTitle = await loadAlbumTitle();
+      const storedCoverText = await loadCoverText(albumKey);
 
       if (savedPages && savedPages.length > 0) {
-        setPages(savedPages);
+        let reconciled = ensureAllPhotosOnPages(savedPages, photos);
+
+        // Restore cover text if pages lost it (e.g. after cloud rebuild)
+        if (storedCoverText) {
+          const coverIdx = reconciled.findIndex(p => p.id === 'page-cover');
+          const idx = coverIdx >= 0 ? coverIdx : 0;
+          if (!(reconciled[idx]?.text?.content || '').trim()) {
+            reconciled = reconciled.map((page, i) =>
+              i === idx
+                ? {
+                    ...page,
+                    text: {
+                      ...page.text,
+                      content: storedCoverText,
+                    },
+                  }
+                : page,
+            );
+          }
+        }
+
+        setPages(reconciled);
         if (savedTitle) setTitle(savedTitle);
         pagesInitializedRef.current = true;
+        photosCountRef.current = photos.length;
         return;
       }
 
@@ -95,18 +146,24 @@ export function EditorScreen({
         id: 'page-cover',
         photos: [],
         layout: 'single' as LayoutType,
-        text: { content: '', fontSize: 14, alignment: 'center' as const },
+        text: {
+          content: storedCoverText,
+          fontSize: 14,
+          alignment: 'center' as const,
+        },
         stickers: [],
       };
 
       const distributed = distributePhotosToPages(photos, pageCount);
       setPages([coverPage, ...distributed]);
       pagesInitializedRef.current = true;
+      photosCountRef.current = photos.length;
     };
 
-    initPages();
-  }, [photos, pageCount]);
+    void initPages();
+  }, [photos, pageCount, albumKey]);
 
+  // When album photos grow after init, merge onto pages (or rebuild if pages lag behind)
   useEffect(() => {
     if (!pagesInitializedRef.current) return;
     if (photos.length <= photosCountRef.current) {
@@ -114,33 +171,32 @@ export function EditorScreen({
       return;
     }
 
+    if (skipNextPhotosSyncRef.current) {
+      skipNextPhotosSyncRef.current = false;
+      photosCountRef.current = photos.length;
+      return;
+    }
+
     const reloadPages = async () => {
       const savedPages = await loadAlbumPages();
-      if (savedPages && savedPages.length > 0) {
-        setPages(savedPages);
-      }
+      const base = savedPages && savedPages.length > 0 ? savedPages : pages;
+      const reconciled = ensureAllPhotosOnPages(base, photos);
+      setPages(reconciled);
       photosCountRef.current = photos.length;
     };
 
-    reloadPages();
+    void reloadPages();
   }, [photos.length]);
 
   const isCoverPage = currentPage === 0;
   const currentPageData = pages[currentPage];
 
-  // Auto-save pages when they change
+  // Auto-save pages + cover text when they change
   useEffect(() => {
     if (pages.length > 0) {
-      saveAlbumPages(pages);
+      void persistEditorState({ pages, title, albumKey });
     }
-  }, [pages]);
-
-  // Auto-save title when it changes
-  useEffect(() => {
-    if (title) {
-      saveAlbumTitle(title);
-    }
-  }, [title]);
+  }, [pages, title, albumKey]);
 
   // Update text for current page
   const updatePageText = useCallback(
@@ -156,9 +212,51 @@ export function EditorScreen({
     [currentPage],
   );
 
+  const handleSave = useCallback(async () => {
+    if (isSaving) return;
+    setIsSaving(true);
+    try {
+      const coverText = getCoverTextFromPages(pages);
+      const nextTitle = title.trim() || albumTitle || 'Mi álbum';
+      dispatch(setAlbumTitle(nextTitle));
+      dispatch(setCoverText(coverText));
+      await persistEditorState({ pages, title: nextTitle, albumKey });
+      await onSave();
+
+      const remoteId = store.getState().album.currentAlbum?.remoteId;
+      if (remoteId && remoteId !== albumKey) {
+        await persistEditorState({
+          pages,
+          title: nextTitle,
+          albumKey: remoteId,
+        });
+      }
+    } catch (error) {
+      Alert.alert(
+        'No se pudo guardar',
+        getErrorMessage(error, 'Intenta de nuevo.'),
+      );
+    } finally {
+      setIsSaving(false);
+    }
+  }, [
+    isSaving,
+    dispatch,
+    title,
+    albumTitle,
+    pages,
+    albumKey,
+    onSave,
+  ]);
+
   // Navigation
-  const goToPrevPage = () => setCurrentPage(Math.max(0, currentPage - 1));
-  const goToNextPage = () => setCurrentPage(Math.min(pages.length - 1, currentPage + 1));
+  const goToPrevPage = useCallback(() => {
+    setCurrentPage(page => Math.max(0, page - 1));
+  }, []);
+
+  const goToNextPage = useCallback(() => {
+    setCurrentPage(page => Math.min(pages.length - 1, page + 1));
+  }, [pages.length]);
 
   const closePhotoActions = useCallback(() => {
     setShowPhotoActions(false);
@@ -169,6 +267,117 @@ export function EditorScreen({
     setSelectedPhotoIndex(photoIndex);
     setShowPhotoActions(true);
   }, []);
+
+  const handleOpenFilter = useCallback(() => {
+    setShowPhotoActions(false);
+    setShowFilterPicker(true);
+  }, []);
+
+  const handleOpenReplace = useCallback(() => {
+    setShowPhotoActions(false);
+    setShowReplacePicker(true);
+  }, []);
+
+  const applyFilterToPhoto = useCallback(
+    (filter: FilterType) => {
+      if (selectedPhotoIndex === null) return;
+
+      setPages(prev =>
+        prev.map((page, pageIndex) => {
+          if (pageIndex !== currentPage) return page;
+          return {
+            ...page,
+            photos: page.photos.map((photo, index) =>
+              index === selectedPhotoIndex ? { ...photo, filter } : photo,
+            ),
+          };
+        }),
+      );
+    },
+    [currentPage, selectedPhotoIndex],
+  );
+
+  const replacePhotoOnPage = useCallback(
+    (uris: string[]) => {
+      if (selectedPhotoIndex === null || uris.length === 0) return;
+
+      const newUri = uris[0];
+      const oldUri = pages[currentPage]?.photos[selectedPhotoIndex]?.uri;
+      if (!oldUri || oldUri === newUri) {
+        setShowReplacePicker(false);
+        setSelectedPhotoIndex(null);
+        return;
+      }
+
+      setPages(prev =>
+        prev.map((page, pageIndex) => {
+          if (pageIndex !== currentPage) return page;
+          return {
+            ...page,
+            photos: page.photos.map((photo, index) =>
+              index === selectedPhotoIndex
+                ? { ...photo, uri: newUri, filter: 'none' }
+                : photo,
+            ),
+          };
+        }),
+      );
+
+      dispatch(replacePhoto({ oldUri, newUri }));
+      setShowReplacePicker(false);
+      setSelectedPhotoIndex(null);
+    },
+    [currentPage, dispatch, pages, selectedPhotoIndex],
+  );
+
+  const resolveLayoutFromCount = useCallback((count: number): LayoutType => {
+    if (count <= 1) return 'single';
+    if (count === 2) return 'grid-2';
+    if (count === 3) return 'collage';
+    return 'grid-4';
+  }, []);
+
+  const handleEmptyPagePress = useCallback((pageIndex: number) => {
+    setCurrentPage(pageIndex);
+    setFillEmptyPageIndex(pageIndex);
+    setShowFillEmptyPicker(true);
+  }, []);
+
+  const fillEmptyPageWithPhotos = useCallback(
+    (uris: string[]) => {
+      if (fillEmptyPageIndex === null || uris.length === 0) return;
+
+      const startPageIndex = fillEmptyPageIndex;
+      const maxSelectable = countAvailablePhotoSlots(pages, startPageIndex);
+      const selected = uris.slice(0, maxSelectable);
+      if (selected.length === 0) return;
+
+      const newlyAdded = selected.filter(uri => !photos.includes(uri)).length;
+
+      setPages(prev => {
+        const next = placePhotosAcrossPages(prev, selected, startPageIndex);
+        void saveAlbumPages(next);
+        return next;
+      });
+
+      // Evita que el sync por photos.length recargue storage viejo y borre el cambio.
+      skipNextPhotosSyncRef.current = true;
+      photosCountRef.current = photos.length + newlyAdded;
+      dispatch(appendPhotos(selected));
+
+      setShowFillEmptyPicker(false);
+      setFillEmptyPageIndex(null);
+    },
+    [dispatch, fillEmptyPageIndex, pages, photos],
+  );
+
+  const handleSpreadPhotoPress = useCallback(
+    (pageIndex: number, photoIndex: number) => {
+      setCurrentPage(pageIndex);
+      openPhotoActions(photoIndex);
+    },
+    [openPhotoActions],
+  );
 
   const removePhotoFromPage = useCallback(
     async (photoIndex: number) => {
@@ -194,16 +403,17 @@ export function EditorScreen({
         }
 
         setPages(prev =>
-          prev.map((page, pageIndex) =>
-            pageIndex === currentPage
-              ? {
-                  ...page,
-                  photos: page.photos
-                    .filter((_, index) => index !== photoIndex)
-                    .map((photo, order) => ({ ...photo, order })),
-                }
-              : page,
-          ),
+          prev.map((page, pageIndex) => {
+            if (pageIndex !== currentPage) return page;
+            const photos = page.photos
+              .filter((_, index) => index !== photoIndex)
+              .map((photo, order) => ({ ...photo, order }));
+            return {
+              ...page,
+              photos,
+              layout: resolveLayoutFromCount(photos.length),
+            };
+          }),
         );
 
         dispatch(removePhoto(photoUri));
@@ -224,7 +434,14 @@ export function EditorScreen({
 
       await performDelete();
     },
-    [album.currentAlbum?.remoteFotos, closePhotoActions, currentPage, dispatch, pages],
+    [
+      album.currentAlbum?.remoteFotos,
+      closePhotoActions,
+      currentPage,
+      dispatch,
+      pages,
+      resolveLayoutFromCount,
+    ],
   );
 
   const movePhotoOnPage = useCallback(
@@ -259,20 +476,42 @@ export function EditorScreen({
     [closePhotoActions, currentPage, pages, selectedPhotoIndex],
   );
 
-  const renderTouchablePhoto = (
-    photo: PagePhoto,
-    photoIndex: number,
-    containerStyle?: object,
-  ) => (
-    <TouchableOpacity
-      key={`${photo.uri}-${photoIndex}`}
-      style={containerStyle}
-      onPress={() => openPhotoActions(photoIndex)}
-      activeOpacity={0.85}
-      accessibilityLabel={`Foto ${photoIndex + 1}. Toca para opciones.`}
-      accessibilityRole="button">
-      <Image source={{ uri: photo.uri }} style={styles.photoImage} resizeMode="cover" />
-    </TouchableOpacity>
+  const renderBookPreview = () => (
+    <BookPageCurl
+      currentPage={currentPage}
+      pageCount={pages.length}
+      onPrev={goToPrevPage}
+      onNext={goToNextPage}
+      renderPage={pageIndex => {
+        if (pageIndex === 0) {
+          return (
+            <ClosedBookCover
+              page={pages[0]}
+              fallbackCoverPhoto={photos[0]}
+              onPhotoPress={() => openPhotoActions(0)}
+            />
+          );
+        }
+
+        // Spreads: [1|2], [3|4], ... Last odd page sits alone on the left.
+        const interior = Math.max(1, pageIndex);
+        const left = interior % 2 === 1 ? interior : interior - 1;
+        const hasRightPage = left + 1 < pages.length;
+        const right = hasRightPage ? left + 1 : -1;
+
+        return (
+          <OpenBookSpread
+            leftPage={pages[left]}
+            rightPage={hasRightPage ? pages[right] : undefined}
+            leftPageIndex={left}
+            rightPageIndex={right}
+            activePageIndex={pageIndex}
+            onPhotoPress={handleSpreadPhotoPress}
+            onEmptyPagePress={handleEmptyPagePress}
+          />
+        );
+      }}
+    />
   );
 
   const closeLocationInput = useCallback(() => {
@@ -358,113 +597,6 @@ export function EditorScreen({
     );
   };
 
-  // Render ALL photos for the current page in a collage layout
-  const renderPagePhotos = () => {
-    if (!currentPageData || currentPageData.photos.length === 0) {
-      return (
-        <View style={styles.emptyPage}>
-          <Text style={styles.emptyPageText}>Sin fotos en esta página</Text>
-        </View>
-      );
-    }
-
-    const pagePhotos = currentPageData.photos;
-    const count = pagePhotos.length;
-
-    // 1 photo: full width
-    if (count === 1) {
-      return (
-        <View style={styles.photosContainer}>
-          <View style={styles.singlePhotoWrapper}>
-            {renderTouchablePhoto(pagePhotos[0], 0, styles.singlePhotoTouchable)}
-          </View>
-        </View>
-      );
-    }
-
-    // 2 photos: side by side
-    if (count === 2) {
-      return (
-        <View style={styles.photosContainer}>
-          <View style={styles.row}>
-            {pagePhotos.map((photo, i) =>
-              renderTouchablePhoto(photo, i, styles.halfPhoto),
-            )}
-          </View>
-        </View>
-      );
-    }
-
-    // 3 photos: 1 big left + 2 small right (like Figma)
-    if (count === 3) {
-      return (
-        <View style={styles.photosContainer}>
-          <View style={styles.collageRow}>
-            {renderTouchablePhoto(pagePhotos[0], 0, styles.collageBig)}
-            <View style={styles.collageRightCol}>
-              {renderTouchablePhoto(pagePhotos[1], 1, styles.collageSmallTop)}
-              {renderTouchablePhoto(pagePhotos[2], 2, styles.collageSmallBottom)}
-            </View>
-          </View>
-        </View>
-      );
-    }
-
-    // 4+ photos: 2x2 grid (show all in rows of 2)
-    const rows: PagePhoto[][] = [];
-    for (let i = 0; i < pagePhotos.length; i += 2) {
-      rows.push(pagePhotos.slice(i, i + 2));
-    }
-
-    return (
-      <View style={styles.photosContainer}>
-        {rows.map((row, rowIndex) => (
-          <View key={rowIndex} style={styles.row}>
-            {row.map((photo, i) => {
-              const photoIndex = rowIndex * 2 + i;
-              return renderTouchablePhoto(photo, photoIndex, styles.halfPhoto);
-            })}
-          </View>
-        ))}
-      </View>
-    );
-  };
-
-  // Render the book cover for textos tab showing current page photo + text
-  const renderBookPreview = () => {
-    const coverPhoto = currentPageData?.photos[0]?.uri || photos[0] || null;
-    const pageTextContent = currentPageData?.text.content || '';
-
-    return (
-      <View style={styles.bookContainer}>
-        <View style={styles.bookCover}>
-          {/* Photo on cover */}
-          <View style={styles.bookPhotoFrame}>
-            {coverPhoto ? (
-              <Image
-                source={{ uri: coverPhoto }}
-                style={styles.bookPhoto}
-                resizeMode="cover"
-              />
-            ) : (
-              <View style={styles.bookPhotoPlaceholder} />
-            )}
-          </View>
-          {/* Text area on the book showing what user types */}
-          <View style={styles.bookTextArea}>
-            {pageTextContent ? (
-              <Text style={styles.bookTextContent} numberOfLines={3}>
-                {pageTextContent}
-              </Text>
-            ) : (
-              <View style={styles.bookTextBorder} />
-            )}
-          </View>
-        </View>
-      </View>
-    );
-  };
-
   return (
     <LinearGradient
       colors={['#F5F8FA', '#EDE8E3']}
@@ -499,7 +631,7 @@ export function EditorScreen({
         )}
         <View style={styles.metaRow}>
           <Text style={styles.meta}>
-            {photoCount} fotos · {pageCount} páginas
+            {photoCount} fotos · {Math.max(pageCount, Math.max(0, pages.length - 1))} páginas
           </Text>
           <TouchableOpacity
             style={styles.addPhotosChip}
@@ -539,43 +671,23 @@ export function EditorScreen({
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.contentInner}>
-        {isCoverPage ? (
-          <>
-            {/* Page 0: Cover — book preview + text input */}
-            {renderBookPreview()}
-            <View style={styles.textInputContainer}>
-              <TextInput
-                style={styles.textInput}
-                value={currentPageData?.text.content || ''}
-                onChangeText={updatePageText}
-                placeholder="Texto de prueba"
-                placeholderTextColor={colors.text.tertiary}
-                multiline
-                accessibilityLabel="Texto de la portada"
-              />
-            </View>
-          </>
-        ) : activeTab === 'textos' ? (
-          <>
-            {/* Pages 1+, Textos tab: photos + text input */}
-            {renderPagePhotos()}
-            <View style={styles.textInputContainer}>
-              <TextInput
-                style={styles.textInput}
-                value={currentPageData?.text.content || ''}
-                onChangeText={updatePageText}
-                placeholder="Texto de prueba"
-                placeholderTextColor={colors.text.tertiary}
-                multiline
-                accessibilityLabel="Texto de la página"
-              />
-            </View>
-          </>
+        {renderBookPreview()}
+        {isCoverPage || activeTab === 'textos' ? (
+          <View style={styles.textInputContainer}>
+            <TextInput
+              style={styles.textInput}
+              value={currentPageData?.text.content || ''}
+              onChangeText={updatePageText}
+              placeholder="Texto de prueba"
+              placeholderTextColor={colors.text.tertiary}
+              multiline
+              accessibilityLabel={
+                isCoverPage ? 'Texto de la portada' : 'Texto de la página'
+              }
+            />
+          </View>
         ) : (
           <>
-            {/* Pages 1+, Datos tab: photos + text + Fecha/Ubicación chips */}
-            {renderPagePhotos()}
-            {/* Show page text if any */}
             {currentPageData?.text.content ? (
               <View style={styles.pageTextDisplay}>
                 <Text style={styles.pageTextContent}>
@@ -681,7 +793,7 @@ export function EditorScreen({
           />
         </TouchableOpacity>
         <Text style={styles.pageIndicator}>
-          {currentPage} de {pages.length - 1}
+          {`${currentPage} de ${Math.max(pages.length - 1, 0)}`}
         </Text>
         <TouchableOpacity
           onPress={goToNextPage}
@@ -712,8 +824,15 @@ export function EditorScreen({
           icon="badge"
           style={styles.buyButton}
         />
-        <TouchableOpacity style={styles.saveBtn} onPress={onSave}>
-          <Text style={styles.saveBtnText}>Guardar</Text>
+        <TouchableOpacity
+          style={styles.saveBtn}
+          onPress={() => {
+            void handleSave();
+          }}
+          disabled={isSaving}>
+          <Text style={styles.saveBtnText}>
+            {isSaving ? 'Guardando...' : 'Guardar'}
+          </Text>
         </TouchableOpacity>
       </View>
 
@@ -725,8 +844,8 @@ export function EditorScreen({
           selectedPhotoIndex !== null &&
           (currentPageData?.photos.length ?? 0) > selectedPhotoIndex + 1
         }
-        onReplace={closePhotoActions}
-        onApplyFilter={closePhotoActions}
+        onReplace={handleOpenReplace}
+        onApplyFilter={handleOpenFilter}
         onMoveLeft={() => movePhotoOnPage('left')}
         onMoveRight={() => movePhotoOnPage('right')}
         onDelete={() => {
@@ -735,12 +854,55 @@ export function EditorScreen({
         }}
         onClose={closePhotoActions}
       />
+
+      <FilterPickerModal
+        visible={
+          showFilterPicker &&
+          selectedPhotoIndex !== null &&
+          Boolean(currentPageData?.photos[selectedPhotoIndex])
+        }
+        photoUri={currentPageData?.photos[selectedPhotoIndex ?? 0]?.uri ?? ''}
+        currentFilter={
+          currentPageData?.photos[selectedPhotoIndex ?? 0]?.filter ?? 'none'
+        }
+        onSelectFilter={applyFilterToPhoto}
+        onClose={() => {
+          setShowFilterPicker(false);
+          setSelectedPhotoIndex(null);
+        }}
+      />
+
+      <ReplacePhotoPicker
+        visible={showReplacePicker && selectedPhotoIndex !== null}
+        title="Reemplazar foto"
+        confirmLabel="Usar"
+        maxSelect={1}
+        onClose={() => {
+          setShowReplacePicker(false);
+          setSelectedPhotoIndex(null);
+        }}
+        onSelect={replacePhotoOnPage}
+      />
+
+      <ReplacePhotoPicker
+        visible={showFillEmptyPicker && fillEmptyPageIndex !== null}
+        title="Agregar fotos"
+        confirmLabel="Agregar"
+        maxSelect={
+          fillEmptyPageIndex !== null
+            ? countAvailablePhotoSlots(pages, fillEmptyPageIndex)
+            : 1
+        }
+        permissionMessage="Necesitamos acceso a tu galería para agregar fotos."
+        onClose={() => {
+          setShowFillEmptyPicker(false);
+          setFillEmptyPageIndex(null);
+        }}
+        onSelect={fillEmptyPageWithPhotos}
+      />
     </LinearGradient>
   );
 }
-
-const CONTENT_WIDTH = width - spacing['2xl'] * 2;
-const PHOTO_SIZE = (CONTENT_WIDTH - PHOTO_GAP) / 2;
 
 const styles = StyleSheet.create({
   container: {
@@ -836,79 +998,8 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   contentInner: {
-    paddingHorizontal: spacing['2xl'],
+    paddingHorizontal: spacing.xl,
     paddingBottom: spacing.lg,
-  },
-  // Photos (Datos tab)
-  photosContainer: {
-    marginBottom: spacing.xl,
-    gap: PHOTO_GAP,
-  },
-  row: {
-    flexDirection: 'row',
-    gap: PHOTO_GAP,
-  },
-  halfPhoto: {
-    flex: 1,
-    aspectRatio: 1,
-    borderRadius: borderRadius.sm,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceSecondary,
-  },
-  singlePhotoWrapper: {
-    width: '100%',
-    aspectRatio: 4 / 3,
-    borderRadius: borderRadius.sm,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceSecondary,
-  },
-  singlePhotoTouchable: {
-    width: '100%',
-    height: '100%',
-  },
-  // Collage 3 photos
-  collageRow: {
-    flexDirection: 'row',
-    gap: PHOTO_GAP,
-    height: CONTENT_WIDTH * 0.75,
-  },
-  collageBig: {
-    flex: 1,
-    borderRadius: borderRadius.sm,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceSecondary,
-  },
-  collageRightCol: {
-    flex: 1,
-    gap: PHOTO_GAP,
-  },
-  collageSmallTop: {
-    flex: 1,
-    borderRadius: borderRadius.sm,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceSecondary,
-  },
-  collageSmallBottom: {
-    flex: 1,
-    borderRadius: borderRadius.sm,
-    overflow: 'hidden',
-    backgroundColor: colors.surfaceSecondary,
-  },
-  photoImage: {
-    width: '100%',
-    height: '100%',
-  },
-  emptyPage: {
-    height: 200,
-    justifyContent: 'center',
-    alignItems: 'center',
-    backgroundColor: colors.surfaceSecondary,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.xl,
-  },
-  emptyPageText: {
-    fontSize: typography.sizes.md,
-    color: colors.text.tertiary,
   },
   // Chips
   chipsRow: {
@@ -1020,69 +1111,15 @@ const styles = StyleSheet.create({
     fontWeight: typography.weights.semibold,
     color: colors.text.inverse,
   },
-  // Book preview (Textos tab)
-  bookContainer: {
-    alignItems: 'center',
-    marginBottom: spacing.xl,
-  },
-  bookCover: {
-    width: width * 0.6,
-    height: width * 0.75,
-    borderRadius: borderRadius.sm,
-    backgroundColor: colors.blue.light,
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.xl,
-    shadowColor: '#000',
-    shadowOffset: { width: 3, height: 6 },
-    shadowOpacity: 0.15,
-    shadowRadius: 10,
-    elevation: 6,
-  },
-  bookPhotoFrame: {
-    width: '60%',
-    height: '40%',
-    borderRadius: borderRadius.sm,
-    overflow: 'hidden',
-    backgroundColor: colors.surface,
-    marginBottom: spacing.lg,
-  },
-  bookPhoto: {
-    width: '100%',
-    height: '100%',
-  },
-  bookPhotoPlaceholder: {
-    width: '100%',
-    height: '100%',
-    backgroundColor: colors.surfaceSecondary,
-  },
-  bookTextArea: {
-    width: '80%',
-    minHeight: 40,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  bookTextBorder: {
-    width: '100%',
-    height: 40,
-    borderWidth: 1.5,
-    borderColor: colors.blue.medium,
-    borderRadius: 4,
-  },
-  bookTextContent: {
-    fontSize: typography.sizes.sm,
-    color: colors.text.primary,
-    textAlign: 'center',
-    fontStyle: 'italic',
-  },
   // Text input (Textos tab)
   textInputContainer: {
     backgroundColor: colors.surface,
-    borderRadius: borderRadius.md,
+    borderRadius: borderRadius.lg,
     padding: spacing.lg,
-    minHeight: 100,
+    minHeight: 96,
     borderWidth: 1,
-    borderColor: colors.borderLight,
+    borderColor: colors.border,
+    marginTop: spacing.xs,
   },
   textInput: {
     fontSize: typography.sizes.md,

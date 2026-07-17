@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, Animated, Dimensions } from 'react-native';
+import { View, Text, StyleSheet, Animated } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { colors, typography, spacing } from '@core/theme';
 import { botImage } from '@core/assets/images';
@@ -8,7 +8,6 @@ import { setRemoteAlbumId, setSyncError, mergeRemoteFotos } from '@core/store/sl
 import { syncAlbumToApi } from '@core/api/syncAlbum';
 import { getErrorMessage } from '@core/api/errors';
 
-const { height } = Dimensions.get('window');
 const MIN_DISPLAY_MS = 4000;
 
 interface CreatingScreenProps {
@@ -23,6 +22,15 @@ export function CreatingScreen({ onComplete }: CreatingScreenProps) {
   const [statusText, setStatusText] = useState('Organizando tus recuerdos');
   const [pulseAnim] = useState(new Animated.Value(1));
   const progressValueRef = useRef(0);
+  const syncStartedRef = useRef(false);
+  const onCompleteRef = useRef(onComplete);
+  onCompleteRef.current = onComplete;
+
+  // Snapshot once — album identity must NOT re-trigger createAlbum
+  const albumSnapshotRef = useRef(album);
+  if (!albumSnapshotRef.current && album) {
+    albumSnapshotRef.current = album;
+  }
 
   useEffect(() => {
     const messages = [
@@ -57,6 +65,7 @@ export function CreatingScreen({ onComplete }: CreatingScreenProps) {
 
     const runCreation = async () => {
       const startedAt = Date.now();
+      const snapshot = albumSnapshotRef.current;
 
       Animated.timing(progress, {
         toValue: 1,
@@ -65,11 +74,18 @@ export function CreatingScreen({ onComplete }: CreatingScreenProps) {
       }).start();
 
       try {
-        if (isAuthenticated && album) {
+        const alreadyRemote = Boolean(snapshot?.remoteId);
+        if (
+          isAuthenticated &&
+          snapshot &&
+          !alreadyRemote &&
+          !syncStartedRef.current
+        ) {
+          syncStartedRef.current = true;
           const result = await syncAlbumToApi({
-            title: album.title || 'Mi álbum',
-            description: album.story,
-            photoUris: album.photos,
+            title: snapshot.title || 'Mi álbum',
+            description: snapshot.story,
+            photoUris: snapshot.photos,
             onProgress: (step, value) => {
               if (!cancelled) {
                 setStatusText(step);
@@ -103,17 +119,18 @@ export function CreatingScreen({ onComplete }: CreatingScreenProps) {
 
       if (!cancelled) {
         clearInterval(messageInterval);
-        onComplete();
+        onCompleteRef.current();
       }
     };
 
-    runCreation();
+    void runCreation();
 
     return () => {
       cancelled = true;
       clearInterval(messageInterval);
     };
-  }, [album, dispatch, isAuthenticated, onComplete, progress, pulseAnim]);
+    // Intentionally omit `album` — setRemoteAlbumId/mergeRemoteFotos must not re-create
+  }, [dispatch, isAuthenticated, progress, pulseAnim]);
 
   return (
     <View style={styles.container}>

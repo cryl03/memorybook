@@ -1,8 +1,13 @@
 export { PhotoGrid } from './PhotoGrid';
 export { LayoutSelector } from './LayoutSelector';
 export { FilterSelector } from './FilterSelector';
+export { FilterPickerModal } from './FilterPickerModal';
 export { StickerPicker } from './StickerPicker';
 export { StickerLayer } from './StickerLayer';
 export { PageTextEditor } from './PageTextEditor';
 export { BookPreview } from './BookPreview';
+export { OpenBookSpread, ClosedBookCover } from './OpenBookSpread';
 export { PhotoActionSheet } from './PhotoActionSheet';
+export { ReplacePhotoPicker } from './ReplacePhotoPicker';
+export { BookPageCurl } from './BookPageCurl';
+export { PageTurnGesture } from './PageTurnGesture';

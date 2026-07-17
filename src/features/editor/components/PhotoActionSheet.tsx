@@ -45,7 +45,9 @@ export function PhotoActionSheet({
         onPress={onClose}
         accessibilityLabel="Cerrar opciones"
         accessibilityRole="button">
-        <View style={styles.sheet}>
+        <View
+          style={styles.sheet}
+          onStartShouldSetResponder={() => true}>
           <View style={styles.handle} />
           <Text style={styles.title}>Foto {photoIndex + 1}</Text>
 

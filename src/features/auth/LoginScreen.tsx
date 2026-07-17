@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -24,11 +24,16 @@ export function LoginScreen({ onSuccess, onBack, onRegister }: LoginScreenProps)
   const { isLoading, error, isAuthenticated } = useAppSelector(state => state.auth);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
+  const authHandledRef = useRef(false);
 
   useEffect(() => {
-    if (isAuthenticated) {
-      onSuccess();
+    if (!isAuthenticated) {
+      authHandledRef.current = false;
+      return;
     }
+    if (authHandledRef.current) return;
+    authHandledRef.current = true;
+    onSuccess();
   }, [isAuthenticated, onSuccess]);
 
   const handleLogin = () => {
@@ -46,7 +51,7 @@ export function LoginScreen({ onSuccess, onBack, onRegister }: LoginScreenProps)
 
       <Text style={styles.title}>Iniciar sesión</Text>
       <Text style={styles.subtitle}>
-        Accede con tu cuenta para guardar y sincronizar tus álbumes.
+        Al entrar, tu álbum local se sincronizará automáticamente con tu cuenta.
       </Text>
 
       <View style={styles.form}>

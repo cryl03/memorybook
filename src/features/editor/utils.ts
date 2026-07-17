@@ -1,41 +1,76 @@
 import { PageData, LayoutType, PagePhoto } from './types';
 
 /**
- * Distributes photos across pages based on the default layout strategy.
- * Returns an array of PageData objects ready for the editor.
+ * Páginas interiores necesarias con patrón 1 / 2 / 1 / 2 …
+ * (promedio 1.5 fotos por página — no ceil(n/3)).
+ */
+export function pagesNeededForSlotPattern(photoCount: number): number {
+  if (photoCount <= 0) return 1;
+  let pages = 0;
+  let placed = 0;
+  while (placed < photoCount) {
+    placed += pages % 2 === 0 ? 1 : 2;
+    pages += 1;
+  }
+  return pages;
+}
+
+function resolveLayoutFromCount(count: number): LayoutType {
+  if (count <= 1) return 'single';
+  if (count === 2) return 'grid-2';
+  if (count === 3) return 'collage';
+  return 'grid-4';
+}
+
+/**
+ * Distributes ALL photos across pages (1 then 2 alternating).
+ * If pageCount is too small for the slot pattern, pages are added until every photo fits.
  */
 export function distributePhotosToPages(
   photoUris: string[],
   pageCount: number,
 ): PageData[] {
+  const totalPages = Math.max(pageCount, pagesNeededForSlotPattern(photoUris.length));
   const pages: PageData[] = [];
-  const photosPerPage = Math.ceil(photoUris.length / pageCount);
   let photoIndex = 0;
 
-  for (let i = 0; i < pageCount; i++) {
+  for (let i = 0; i < totalPages; i++) {
     const pagePhotos: PagePhoto[] = [];
-    const count = Math.min(photosPerPage, photoUris.length - photoIndex);
+    const slotsThisPage = i % 2 === 0 ? 1 : 2;
 
-    for (let j = 0; j < count; j++) {
-      if (photoIndex < photoUris.length) {
-        pagePhotos.push({
-          uri: photoUris[photoIndex],
-          filter: 'none',
-          order: j,
-        });
-        photoIndex++;
-      }
+    for (let j = 0; j < slotsThisPage && photoIndex < photoUris.length; j++) {
+      pagePhotos.push({
+        uri: photoUris[photoIndex],
+        filter: 'none',
+        order: j,
+      });
+      photoIndex++;
     }
-
-    // Choose default layout based on photo count
-    let defaultLayout: LayoutType = 'single';
-    if (pagePhotos.length === 2) defaultLayout = 'grid-2';
-    else if (pagePhotos.length >= 3) defaultLayout = 'grid-4';
 
     pages.push({
       id: `page-${i}`,
       photos: pagePhotos,
-      layout: defaultLayout,
+      layout: resolveLayoutFromCount(pagePhotos.length),
+      text: { content: '', fontSize: 14, alignment: 'center' },
+      stickers: [],
+    });
+  }
+
+  // Safety: if anything still remains, pack up to 4 per page then append extra pages
+  while (photoIndex < photoUris.length) {
+    const pagePhotos: PagePhoto[] = [];
+    while (pagePhotos.length < 4 && photoIndex < photoUris.length) {
+      pagePhotos.push({
+        uri: photoUris[photoIndex],
+        filter: 'none',
+        order: pagePhotos.length,
+      });
+      photoIndex++;
+    }
+    pages.push({
+      id: `page-${pages.length}`,
+      photos: pagePhotos,
+      layout: resolveLayoutFromCount(pagePhotos.length),
       text: { content: '', fontSize: 14, alignment: 'center' },
       stickers: [],
     });
@@ -60,6 +95,185 @@ export function getMaxPhotosForLayout(layout: LayoutType): number {
     default:
       return 4;
   }
+}
+
+/** Huecos preferidos por página: izquierda 1, derecha 2 (mismo patrón del álbum). */
+export function preferredSlotsForPage(pageIndex: number): number {
+  if (pageIndex <= 0) return 1;
+  return (pageIndex - 1) % 2 === 0 ? 1 : 2;
+}
+
+function countInteriorPhotos(pages: PageData[]): number {
+  return pages.reduce((sum, page, index) => {
+    if (index === 0 || page.id === 'page-cover') return sum;
+    return sum + page.photos.length;
+  }, 0);
+}
+
+/**
+ * Si el álbum tiene más fotos que las páginas guardadas, redistribuye
+ * todas las fotos del álbum (conserva portada: texto / stickers).
+ */
+export function ensureAllPhotosOnPages(
+  pages: PageData[],
+  albumPhotoUris: string[],
+): PageData[] {
+  if (albumPhotoUris.length === 0) return pages;
+
+  const onPages = new Set<string>();
+  pages.forEach(page => {
+    page.photos.forEach(photo => onPages.add(photo.uri));
+  });
+
+  const missing = albumPhotoUris.filter(uri => !onPages.has(uri));
+  const interiorCount = countInteriorPhotos(pages);
+
+  if (missing.length === 0 && interiorCount >= albumPhotoUris.length) {
+    return pages;
+  }
+
+  const cover =
+    pages.find(page => page.id === 'page-cover') ??
+    pages[0] ??
+    ({
+      id: 'page-cover',
+      photos: [],
+      layout: 'single' as LayoutType,
+      text: { content: '', fontSize: 14, alignment: 'center' as const },
+      stickers: [],
+    } satisfies PageData);
+
+  const coverPage: PageData = {
+    ...cover,
+    id: 'page-cover',
+    photos: cover.photos ?? [],
+  };
+
+  const needed = pagesNeededForSlotPattern(albumPhotoUris.length);
+  const distributed = distributePhotosToPages(albumPhotoUris, needed);
+
+  return [coverPage, ...distributed];
+}
+
+/**
+ * Coloca fotos nuevas desde startPageIndex hacia adelante (luego el resto),
+ * llenando huecos vacíos con 1 o 2 fotos por página. El sobrante sigue a las otras.
+ */
+export function placePhotosAcrossPages(
+  pages: PageData[],
+  uris: string[],
+  startPageIndex: number,
+): PageData[] {
+  if (uris.length === 0) return pages;
+
+  let cursor = 0;
+  const next = pages.map(page => ({
+    ...page,
+    photos: page.photos.map(photo => ({ ...photo })),
+  }));
+
+  const order: number[] = [];
+  for (let i = startPageIndex; i < next.length; i += 1) order.push(i);
+  for (let i = 1; i < startPageIndex; i += 1) order.push(i);
+
+  for (const pageIndex of order) {
+    if (cursor >= uris.length) break;
+    if (pageIndex === 0 && startPageIndex !== 0) continue;
+
+    const preferred = preferredSlotsForPage(pageIndex);
+    const currentCount = next[pageIndex].photos.length;
+    const room = preferred - currentCount;
+    if (room <= 0) continue;
+
+    const take = Math.min(room, uris.length - cursor);
+    const additions: PagePhoto[] = [];
+    for (let j = 0; j < take; j += 1) {
+      additions.push({
+        uri: uris[cursor],
+        filter: 'none',
+        order: currentCount + j,
+      });
+      cursor += 1;
+    }
+
+    const photos = [...next[pageIndex].photos, ...additions].map((photo, orderIdx) => ({
+      ...photo,
+      order: orderIdx,
+    }));
+
+    next[pageIndex] = {
+      ...next[pageIndex],
+      photos,
+      layout: resolveLayoutFromCount(photos.length),
+    };
+  }
+
+  // Si aún sobran y hay páginas con espacio (< 4), las reparte adaptando el layout
+  if (cursor < uris.length) {
+    for (const pageIndex of order) {
+      if (cursor >= uris.length) break;
+      if (pageIndex === 0 && startPageIndex !== 0) continue;
+
+      const currentCount = next[pageIndex].photos.length;
+      const room = 4 - currentCount;
+      if (room <= 0) continue;
+
+      const take = Math.min(room, uris.length - cursor);
+      const additions: PagePhoto[] = [];
+      for (let j = 0; j < take; j += 1) {
+        additions.push({
+          uri: uris[cursor],
+          filter: 'none',
+          order: currentCount + j,
+        });
+        cursor += 1;
+      }
+
+      const photos = [...next[pageIndex].photos, ...additions].map((photo, orderIdx) => ({
+        ...photo,
+        order: orderIdx,
+      }));
+
+      next[pageIndex] = {
+        ...next[pageIndex],
+        photos,
+        layout: resolveLayoutFromCount(photos.length),
+      };
+    }
+  }
+
+  // Si todavía sobran, agrega páginas nuevas con el patrón 1/2
+  if (cursor < uris.length) {
+    const remaining = uris.slice(cursor);
+    const extra = distributePhotosToPages(remaining, pagesNeededForSlotPattern(remaining.length));
+    const baseIndex = next.length;
+    extra.forEach((page, i) => {
+      next.push({
+        ...page,
+        id: `page-${baseIndex + i}`,
+      });
+    });
+  }
+
+  return next;
+}
+
+export function countAvailablePhotoSlots(
+  pages: PageData[],
+  startPageIndex: number,
+): number {
+  let slots = 0;
+  const order: number[] = [];
+  for (let i = startPageIndex; i < pages.length; i += 1) order.push(i);
+  for (let i = 1; i < startPageIndex; i += 1) order.push(i);
+
+  for (const pageIndex of order) {
+    if (pageIndex === 0 && startPageIndex !== 0) continue;
+    slots += Math.max(0, 4 - (pages[pageIndex]?.photos.length ?? 0));
+  }
+
+  // Always allow adding more by creating new pages later
+  return Math.max(slots, 40);
 }
 
 /**

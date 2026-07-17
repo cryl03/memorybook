@@ -14,52 +14,65 @@ export interface SyncAlbumResult {
   remoteFotos: Record<string, string>;
 }
 
+/** Prevent parallel creates (React Strict Mode / re-entrant effects) */
+let createAlbumLock: Promise<SyncAlbumResult> | null = null;
+
 export async function syncAlbumToApi({
   title,
   description,
   photoUris,
   onProgress,
 }: SyncAlbumOptions): Promise<SyncAlbumResult> {
-  onProgress?.('Creando álbum', 0.1);
-
-  const album = await albumService.createAlbum({
-    nombre: title,
-    descripcion: description ?? null,
-  });
-
-  if (!album.unique_id) {
-    throw new Error('El álbum se creó sin identificador');
+  if (createAlbumLock) {
+    return createAlbumLock;
   }
 
-  if (photoUris.length === 0) {
-    onProgress?.('Álbum listo', 1);
-    return { album, uploadedCount: 0, remoteFotos: {} };
-  }
+  createAlbumLock = (async () => {
+    onProgress?.('Creando álbum', 0.1);
 
-  onProgress?.('Subiendo fotos', 0.2);
+    const album = await albumService.createAlbum({
+      nombre: title,
+      descripcion: description ?? null,
+    });
 
-  const fotos = await fotoService.uploadFotos(
-    album.unique_id,
-    photoUris,
-    (uploaded: number, total: number) => {
-      const uploadProgress = 0.2 + (uploaded / total) * 0.8;
-      onProgress?.(`Subiendo fotos (${uploaded}/${total})`, uploadProgress);
-    },
-  );
-
-  onProgress?.('Álbum listo', 1);
-
-  const remoteFotos: Record<string, string> = {};
-  fotos.forEach((foto, index) => {
-    const localUri = photoUris[index];
-    if (localUri && foto.unique_id) {
-      remoteFotos[localUri] = foto.unique_id;
+    if (!album.unique_id) {
+      throw new Error('El álbum se creó sin identificador');
     }
+
+    if (photoUris.length === 0) {
+      onProgress?.('Álbum listo', 1);
+      return { album, uploadedCount: 0, remoteFotos: {} };
+    }
+
+    onProgress?.('Subiendo fotos', 0.2);
+
+    const fotos = await fotoService.uploadFotos(
+      album.unique_id,
+      photoUris,
+      (uploaded: number, total: number) => {
+        const uploadProgress = 0.2 + (uploaded / total) * 0.8;
+        onProgress?.(`Subiendo fotos (${uploaded}/${total})`, uploadProgress);
+      },
+    );
+
+    onProgress?.('Álbum listo', 1);
+
+    const remoteFotos: Record<string, string> = {};
+    fotos.forEach((foto, index) => {
+      const localUri = photoUris[index];
+      if (localUri && foto.unique_id) {
+        remoteFotos[localUri] = foto.unique_id;
+      }
+    });
+
+    return {
+      album,
+      uploadedCount: fotos.length,
+      remoteFotos,
+    };
+  })().finally(() => {
+    createAlbumLock = null;
   });
 
-  return {
-    album,
-    uploadedCount: fotos.length,
-    remoteFotos,
-  };
+  return createAlbumLock;
 }
