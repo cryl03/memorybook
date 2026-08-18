@@ -3,12 +3,13 @@ import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { ProfileScreen } from '@features/profile/ProfileScreen';
 import { OrdersScreen } from '@features/profile/OrdersScreen';
 import { ProjectsScreen } from '@features/profile/ProjectsScreen';
+import type { Album } from '@core/api';
 import type { ProfileStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<ProfileStackParamList>();
 
 interface ProfileNavigatorProps {
-  onEditProject: (projectId: string) => Promise<void>;
+  onEditProject: (projectId: string, album?: Album) => Promise<void>;
   onCreateNewAlbum: () => void;
   onLogin: () => void;
   onLogout: () => Promise<void>;

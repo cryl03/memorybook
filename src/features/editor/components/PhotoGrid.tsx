@@ -110,7 +110,7 @@ export function PhotoGrid({
                 : renderEmpty(styles.collageBig, 0)}
             </View>
             <View style={styles.collageRight}>
-              {[1, 2, 3].map(i =>
+              {[1, 2].map(i =>
                 photos[i]
                   ? renderPhoto(photos[i], i, styles.collageSmall)
                   : renderEmpty(styles.collageSmall, i),
@@ -190,14 +190,14 @@ const styles = StyleSheet.create({
     width: (GRID_WIDTH - spacing.sm) / 2,
     height: (GRID_WIDTH - spacing.sm) / 2,
   },
-  // Collage
+  // Collage — Diseño 3: 1 grande izq + 2 apiladas der (columnas 50/50)
   collageContainer: {
     flexDirection: 'row',
     gap: spacing.sm,
     height: GRID_WIDTH * 0.85,
   },
   collageLeft: {
-    flex: 2,
+    flex: 1,
   },
   collageRight: {
     flex: 1,

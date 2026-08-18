@@ -3,7 +3,7 @@ export type RootStackParamList = {
   Presentation: undefined;
   Login: undefined;
   Register: undefined;
-  OnboardingChat: undefined;
+  OnboardingChat: { skipIntro?: boolean } | undefined;
   PhotoCount: undefined;
   PhotoSelector: { maxPhotos: number; existingPhotos?: string[]; returnTo?: 'Wow' | 'Editor' };
   Creating: undefined;

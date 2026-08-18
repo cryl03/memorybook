@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
@@ -10,6 +10,7 @@ import {
   Dimensions,
   TouchableOpacity,
   Image,
+  ActivityIndicator,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Animated, {
@@ -24,11 +25,18 @@ import Animated, {
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
 import { botImage, onboardingNameBg } from '@core/assets/images';
+import { useAppSelector } from '@core/store/hooks';
+import { albumService, getErrorMessage } from '@core/api';
+import type { StyleSelectorOption } from '@core/api';
 
 const { width, height } = Dimensions.get('window');
 
 interface OnboardingChatScreenProps {
   onComplete: (answers: OnboardingAnswers) => void;
+  /** From "Crear nuevo álbum": skip intro + name, start at story/tone. */
+  skipIntro?: boolean;
+  existingName?: string;
+  onBack?: () => void;
 }
 
 export interface OnboardingAnswers {
@@ -39,22 +47,42 @@ export interface OnboardingAnswers {
 
 type Step = 'intro' | 'name' | 'story' | 'storyResponse' | 'style' | 'styleResponse';
 
-const STORY_OPTIONS = ['Viaje', 'Familia', 'Pareja', 'Amigos', 'Mascota'];
+interface ToneOption extends StyleSelectorOption {
+  color: string;
+}
+
+const FALLBACK_STORY_OPTIONS: StyleSelectorOption[] = [
+  { id: 'viaje', label: 'Viaje' },
+  { id: 'familia', label: 'Familia' },
+  { id: 'pareja', label: 'Pareja' },
+  { id: 'amigos', label: 'Amigos' },
+  { id: 'mascota', label: 'Mascota' },
+];
+
+const TONE_COLORS: Record<string, string> = {
+  sutil: '#C8D8E8',
+  elegante: '#3D2B1F',
+  espontaneo: '#F5820D',
+  clasico: '#D4A5A5',
+};
+const DEFAULT_TONE_COLOR = '#C8D8E8';
+
+const FALLBACK_TONE_OPTIONS: ToneOption[] = [
+  { id: 'sutil', label: 'Sútil', color: TONE_COLORS.sutil },
+  { id: 'elegante', label: 'Elegante', color: TONE_COLORS.elegante },
+  { id: 'espontaneo', label: 'Espontáneo', color: TONE_COLORS.espontaneo },
+  { id: 'clasico', label: 'Clásico', color: TONE_COLORS.clasico },
+];
 
 const STORY_RESPONSES: Record<string, string> = {
-  Viaje: '¡Los viajes suelen guardar algunos\nde los momentos más inolvidables!',
-  Familia: '¡La familia es el corazón de las\nmejores historias!',
-  Pareja: '¡Qué bonito guardar los momentos\njuntos para siempre!',
-  Amigos: '¡Los amigos hacen que cada\nmomento sea especial!',
-  Mascota: '¡Las mascotas nos regalan los\nmomentos más tiernos!',
+  viaje: '¡Los viajes suelen guardar algunos\nde los momentos más inolvidables!',
+  familia: '¡La familia es el corazón de las\nmejores historias!',
+  pareja: '¡Qué bonito guardar los momentos\njuntos para siempre!',
+  amigos: '¡Los amigos hacen que cada\nmomento sea especial!',
+  mascota: '¡Las mascotas nos regalan los\nmomentos más tiernos!',
+  cotidianos: '¡Los momentos cotidianos merecen\nun lugar especial!',
+  special: '¡Algo especial se merece un\nálbum inolvidable!',
 };
-
-const STYLES = [
-  { id: 'sutil', label: 'Sútil', color: '#C8D8E8' },
-  { id: 'elegante', label: 'Elegante', color: '#3D2B1F' },
-  { id: 'espontaneo', label: 'Espontáneo', color: '#F5820D' },
-  { id: 'clasico', label: 'Clásico', color: '#D4A5A5' },
-];
 
 const STYLE_RESPONSES: Record<string, string> = {
   sutil: 'Me encanta tu idea, ¡Sí que vamos\na divertirnos!',
@@ -63,14 +91,81 @@ const STYLE_RESPONSES: Record<string, string> = {
   clasico: '¡Clásico y atemporal! Me encanta\nesa elección.',
 };
 
-export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) {
-  const [step, setStep] = useState<Step>('intro');
-  const [name, setName] = useState('');
+function withToneColor(option: StyleSelectorOption): ToneOption {
+  return {
+    ...option,
+    color: TONE_COLORS[option.id] ?? DEFAULT_TONE_COLOR,
+  };
+}
+
+export function OnboardingChatScreen({
+  onComplete,
+  skipIntro = false,
+  existingName = '',
+  onBack,
+}: OnboardingChatScreenProps) {
+  const isAuthenticated = useAppSelector(state => state.auth.isAuthenticated);
+  const startAtStory = skipIntro || isAuthenticated;
+  const [step, setStep] = useState<Step>(startAtStory ? 'story' : 'intro');
+  const [name, setName] = useState(existingName);
   const [story, setStory] = useState('');
   const [selectedStyle, setSelectedStyle] = useState('');
   const [showTyping, setShowTyping] = useState(false);
   const [showStoryResponse, setShowStoryResponse] = useState(false);
   const [showStyleResponse, setShowStyleResponse] = useState(false);
+  const [loadingQuestions, setLoadingQuestions] = useState(isAuthenticated);
+  const [questionsError, setQuestionsError] = useState<string | null>(null);
+  const [storyQuestion, setStoryQuestion] = useState('');
+  const [toneQuestion, setToneQuestion] = useState(
+    isAuthenticated ? '' : '¿Qué estilo va más\ncontigo?',
+  );
+  const [storyOptions, setStoryOptions] = useState<StyleSelectorOption[]>(
+    isAuthenticated ? [] : FALLBACK_STORY_OPTIONS,
+  );
+  const [toneOptions, setToneOptions] = useState<ToneOption[]>(
+    isAuthenticated ? [] : FALLBACK_TONE_OPTIONS,
+  );
+
+  const loadQuestions = useCallback(async () => {
+    if (!isAuthenticated) {
+      setStoryOptions(FALLBACK_STORY_OPTIONS);
+      setToneOptions(FALLBACK_TONE_OPTIONS);
+      setToneQuestion('¿Qué estilo va más\ncontigo?');
+      setQuestionsError(null);
+      setLoadingQuestions(false);
+      return;
+    }
+
+    setLoadingQuestions(true);
+    setQuestionsError(null);
+
+    try {
+      const response = await albumService.getStyleSelector();
+      const storyQ = response.questions.find(q => q.id === 'story');
+      const toneQ = response.questions.find(q => q.id === 'tone');
+      if (!storyQ?.options.length || !toneQ?.options.length) {
+        throw new Error('El cuestionario llegó incompleto');
+      }
+      setStoryQuestion(storyQ.question);
+      setStoryOptions(storyQ.options);
+      setToneQuestion(toneQ.question);
+      setToneOptions(toneQ.options.map(withToneColor));
+    } catch (error) {
+      setStoryQuestion('');
+      setToneQuestion('');
+      setStoryOptions([]);
+      setToneOptions([]);
+      setQuestionsError(
+        getErrorMessage(error, 'No se pudieron cargar las preguntas'),
+      );
+    } finally {
+      setLoadingQuestions(false);
+    }
+  }, [isAuthenticated]);
+
+  useEffect(() => {
+    void loadQuestions();
+  }, [loadQuestions]);
 
   const handleNameSubmit = () => {
     if (name.trim()) {
@@ -82,9 +177,8 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
     setStep('name');
   };
 
-  const handleStorySelect = (option: string) => {
-    setStory(option);
-    // Show typing indicator then response
+  const handleStorySelect = (option: StyleSelectorOption) => {
+    setStory(option.id);
     setShowTyping(true);
     setTimeout(() => {
       setShowTyping(false);
@@ -106,8 +200,17 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
   };
 
   const handleComplete = () => {
-    onComplete({ name, story, style: selectedStyle });
+    onComplete({ name: name.trim() || existingName, story, style: selectedStyle });
   };
+
+  const storyLabel =
+    storyOptions.find(option => option.id === story)?.label ?? story;
+  const styleLabel =
+    toneOptions.find(option => option.id === selectedStyle)?.label ??
+    selectedStyle;
+  const storyTitle = isAuthenticated
+    ? storyQuestion.trim()
+    : storyQuestion.trim() || `¡Hey ${name}!, ¿Qué historia\nquieres comenzar?`;
 
   const renderIntroStep = () => (
     <View style={styles.stepContainer}>
@@ -176,25 +279,29 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
           <Image source={botImage} style={styles.sphereImage} resizeMode="contain" />
         </View>
 
-        <Text style={styles.titleCenter}>
-          ¡Hey {name}!, ¿Qué historia{'\n'}quieres comenzar?
-        </Text>
+        <Text style={styles.titleCenter}>{storyTitle}</Text>
       </View>
 
       <View style={styles.chatSection}>
-        {/* Story chip (user response) */}
-        {story ? (
+        {loadingQuestions && !story ? (
+          <ActivityIndicator color={colors.text.primary} />
+        ) : questionsError && !story ? (
+          <View style={styles.errorBlock}>
+            <Text style={styles.errorText}>{questionsError}</Text>
+            <Button title="Reintentar" onPress={() => void loadQuestions()} />
+          </View>
+        ) : story ? (
           <Animated.View entering={FadeInUp.duration(300)} style={styles.userBubble}>
-            <Text style={styles.userBubbleText}>{story}</Text>
+            <Text style={styles.userBubbleText}>{storyLabel}</Text>
           </Animated.View>
         ) : (
           <View style={styles.chipsRow}>
-            {STORY_OPTIONS.map(option => (
+            {storyOptions.map(option => (
               <TouchableOpacity
-                key={option}
+                key={option.id}
                 style={styles.chip}
                 onPress={() => handleStorySelect(option)}>
-                <Text style={styles.chipText}>{option}</Text>
+                <Text style={styles.chipText}>{option.label}</Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -232,12 +339,21 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
           <Image source={botImage} style={styles.sphereImage} resizeMode="contain" />
         </View>
 
-        <Text style={styles.titleCenter}>¿Qué estilo va más{'\n'}contigo?</Text>
+        <Text style={styles.titleCenter}>{toneQuestion}</Text>
       </View>
 
-      {!selectedStyle ? (
+      {loadingQuestions && !selectedStyle ? (
+        <View style={styles.styleStatus}>
+          <ActivityIndicator color={colors.text.primary} />
+        </View>
+      ) : questionsError && !selectedStyle ? (
+        <View style={styles.errorBlock}>
+          <Text style={styles.errorText}>{questionsError}</Text>
+          <Button title="Reintentar" onPress={() => void loadQuestions()} />
+        </View>
+      ) : !selectedStyle ? (
         <View style={styles.styleGrid}>
-          {STYLES.map(s => (
+          {toneOptions.map(s => (
             <TouchableOpacity
               key={s.id}
               style={[styles.styleCard, { backgroundColor: s.color }]}
@@ -258,9 +374,7 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
         <View style={styles.chatSection}>
           {/* User selected style */}
           <Animated.View entering={FadeInUp.duration(300)} style={styles.userBubble}>
-            <Text style={styles.userBubbleText}>
-              {STYLES.find(s => s.id === selectedStyle)?.label}
-            </Text>
+            <Text style={styles.userBubbleText}>{styleLabel}</Text>
           </Animated.View>
 
           {/* Typing indicator */}
@@ -300,6 +414,15 @@ export function OnboardingChatScreen({ onComplete }: OnboardingChatScreenProps) 
           style={StyleSheet.absoluteFill}
         />
       )}
+      {skipIntro && onBack ? (
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.backButton}
+          accessibilityRole="button"
+          accessibilityLabel="Volver">
+          <Text style={styles.backText}>Volver</Text>
+        </TouchableOpacity>
+      ) : null}
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
@@ -326,6 +449,18 @@ const styles = StyleSheet.create({
   },
   flex: {
     flex: 1,
+  },
+  backButton: {
+    position: 'absolute',
+    top: spacing['3xl'],
+    left: spacing.xl,
+    zIndex: 2,
+    paddingVertical: spacing.sm,
+    paddingRight: spacing.md,
+  },
+  backText: {
+    fontSize: typography.sizes.md,
+    color: colors.text.secondary,
   },
   scrollContent: {
     flexGrow: 1,
@@ -371,6 +506,7 @@ const styles = StyleSheet.create({
     lineHeight: typography.sizes['3xl'] * typography.lineHeights.tight,
     textAlign: 'center',
     marginBottom: spacing.lg,
+    paddingHorizontal: spacing['3xl'],
   },
   titleLeft: {
     fontSize: 34,
@@ -421,6 +557,20 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing['3xl'],
     justifyContent: 'flex-end',
     paddingBottom: spacing.xl,
+  },
+  errorBlock: {
+    gap: spacing.md,
+    paddingBottom: spacing.xl,
+  },
+  errorText: {
+    fontSize: typography.sizes.md,
+    color: colors.text.secondary,
+    textAlign: 'center',
+  },
+  styleStatus: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
   },
 
   // Chips

@@ -3,15 +3,13 @@ import { View, Text, StyleSheet, TouchableOpacity, Image, Dimensions } from 'rea
 import LinearGradient from 'react-native-linear-gradient';
 import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
-import { useAppDispatch, useAppSelector } from '@core/store/hooks';
-import { repairAlbum } from '@core/store/slices/albumSlice';
+import { useAppSelector } from '@core/store/hooks';
+import { AlbumPdfPreview } from './AlbumPdfPreview';
 
 const { width } = Dimensions.get('window');
 
 interface WowScreenProps {
   albumTitle: string;
-  photoCount?: number;
-  pageCount: number;
   onEdit: () => void;
   onBuy: () => void;
   onSave: () => void | Promise<void>;
@@ -20,21 +18,26 @@ interface WowScreenProps {
 
 export function WowScreen({
   albumTitle,
-  pageCount,
   onEdit,
   onBuy,
   onSave,
   onAddPhotos,
 }: WowScreenProps) {
-  const dispatch = useAppDispatch();
   const [isSaving, setIsSaving] = React.useState(false);
   const album = useAppSelector(state => state.album);
+  const isAuthenticated = useAppSelector(state => state.auth.isAuthenticated);
   const photos = album.currentAlbum?.photos || [];
   const coverPhoto = photos[0] || null;
+  const remoteId = album.currentAlbum?.remoteId;
+  const pdfRevision = album.currentAlbum?.pdfUrl;
+  const [pdfPage, setPdfPage] = React.useState(1);
+  const [pdfPageCount, setPdfPageCount] = React.useState(0);
+  const showPdf = Boolean(isAuthenticated && remoteId);
 
   React.useEffect(() => {
-    dispatch(repairAlbum());
-  }, [dispatch]);
+    setPdfPage(1);
+    setPdfPageCount(0);
+  }, [remoteId]);
 
   const handleSave = async () => {
     if (isSaving) return;
@@ -52,31 +55,48 @@ export function WowScreen({
       style={styles.container}>
       {/* Closed cover only — no glow circle */}
       <View style={styles.bookWrapper}>
-        <View style={styles.bookCover}>
-          <View style={styles.bookPhotoFrame}>
-            {coverPhoto ? (
-              <Image
-                source={{ uri: coverPhoto }}
-                style={styles.bookPhoto}
-                resizeMode="cover"
+        <View style={[styles.bookCover, showPdf ? styles.bookCoverPdf : null]}>
+          {showPdf && remoteId ? (
+            <View style={styles.pdfSlot}>
+              <AlbumPdfPreview
+                albumId={remoteId}
+                page={pdfPage}
+                revision={pdfRevision}
+                onDocumentLoad={total => {
+                  setPdfPageCount(total);
+                }}
               />
-            ) : (
-              <View style={styles.bookPhotoPlaceholder} />
-            )}
-          </View>
-          <View style={styles.bookTextLines}>
-            <View style={styles.textLine} />
-            <View style={[styles.textLine, { width: '70%' }]} />
-            <View style={[styles.textLine, { width: '50%' }]} />
-          </View>
+            </View>
+          ) : (
+            <>
+              <View style={styles.bookPhotoFrame}>
+                {coverPhoto ? (
+                  <Image
+                    source={{ uri: coverPhoto }}
+                    style={styles.bookPhoto}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <View style={styles.bookPhotoPlaceholder} />
+                )}
+              </View>
+              <View style={styles.bookTextLines}>
+                <View style={styles.textLine} />
+                <View style={[styles.textLine, { width: '70%' }]} />
+                <View style={[styles.textLine, { width: '50%' }]} />
+              </View>
+            </>
+          )}
         </View>
       </View>
 
       <Text style={styles.albumTitle}>{albumTitle}</Text>
       <View style={styles.metaRow}>
-        <Text style={styles.albumMeta}>
-          {photos.length} fotos · {pageCount} páginas
-        </Text>
+        {showPdf && pdfPageCount > 0 ? (
+          <Text style={styles.albumMeta}>{pdfPageCount} páginas</Text>
+        ) : (
+          <View />
+        )}
         <TouchableOpacity
           style={styles.addPhotosChip}
           onPress={onAddPhotos}
@@ -88,35 +108,49 @@ export function WowScreen({
 
       <View style={styles.spacer} />
 
-      {/* Portada → next opens editor (open book) */}
+      {/* Páginas del PDF del backend — no del editor local */}
       <View style={styles.pageNav}>
         <TouchableOpacity
-          disabled
+          disabled={!showPdf || pdfPage <= 1}
+          onPress={() => setPdfPage(p => Math.max(1, p - 1))}
           style={styles.navArrow}
-          accessibilityLabel="Portada">
+          accessibilityLabel="Página anterior">
           <Image
             source={icons['arrow-right']}
             style={{
               width: 20,
               height: 20,
-              tintColor: colors.text.tertiary,
+              tintColor:
+                showPdf && pdfPage > 1
+                  ? colors.text.primary
+                  : colors.text.tertiary,
               transform: [{ rotate: '180deg' }],
             }}
             resizeMode="contain"
           />
         </TouchableOpacity>
-        <Text style={styles.pageIndicator}>Portada</Text>
+        <Text style={styles.pageIndicator}>
+          {showPdf
+            ? pdfPageCount > 0
+              ? `${pdfPage} / ${pdfPageCount}`
+              : 'Álbum'
+            : 'Portada'}
+        </Text>
         <TouchableOpacity
-          onPress={onEdit}
+          disabled={!showPdf || pdfPageCount === 0 || pdfPage >= pdfPageCount}
+          onPress={() => setPdfPage(p => Math.min(pdfPageCount, p + 1))}
           style={styles.navArrow}
-          accessibilityLabel="Abrir álbum"
+          accessibilityLabel="Página siguiente"
           accessibilityRole="button">
           <Image
             source={icons['arrow-right']}
             style={{
               width: 20,
               height: 20,
-              tintColor: colors.text.primary,
+              tintColor:
+                showPdf && pdfPageCount > 0 && pdfPage < pdfPageCount
+                  ? colors.text.primary
+                  : colors.text.tertiary,
             }}
             resizeMode="contain"
           />
@@ -160,8 +194,8 @@ const styles = StyleSheet.create({
     marginBottom: spacing['3xl'],
   },
   bookCover: {
-    width: width * 0.58,
-    height: width * 0.84,
+    width: width * 0.78,
+    height: width * 1.05,
     borderRadius: borderRadius.sm,
     backgroundColor: '#A8C4D9',
     alignItems: 'center',
@@ -172,6 +206,17 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 8,
+  },
+  bookCoverPdf: {
+    paddingTop: 0,
+    paddingHorizontal: 0,
+    backgroundColor: colors.surface,
+  },
+  pdfSlot: {
+    width: '100%',
+    flex: 1,
+    borderRadius: borderRadius.sm,
+    overflow: 'hidden',
   },
   bookPhotoFrame: {
     width: '55%',

@@ -15,6 +15,7 @@ import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { useAppSelector } from '@core/store/hooks';
 import { albumService } from '@core/api';
 import { getLocalAlbumSummary } from '@core/storage/localAlbum';
+import { APP_VERSION, APP_BUILD } from '@core/config/version';
 
 interface ProfileScreenProps {
   onNavigateOrders: () => void;
@@ -161,6 +162,15 @@ export function ProfileScreen({
             </Text>
           </TouchableOpacity>
         )}
+      </View>
+
+      <View style={styles.versionFooter} accessibilityLabel={`Memora Book versión ${APP_VERSION} build ${APP_BUILD}`}>
+        <Text style={styles.versionBrand}>Memora Book</Text>
+        <Text style={styles.versionText}>
+          Versión {APP_VERSION}
+          <Text style={styles.versionDot}> · </Text>
+          Build {APP_BUILD}
+        </Text>
       </View>
     </ScrollView>
   );
@@ -334,5 +344,26 @@ const styles = StyleSheet.create({
   menuItemValue: {
     fontSize: typography.sizes.md,
     color: colors.text.secondary,
+  },
+  versionFooter: {
+    alignItems: 'center',
+    paddingTop: spacing['2xl'],
+    paddingBottom: spacing['4xl'],
+    paddingHorizontal: spacing.xl,
+    gap: spacing.xs,
+  },
+  versionBrand: {
+    fontSize: typography.sizes.xs,
+    fontWeight: typography.weights.semibold,
+    color: colors.text.tertiary,
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  versionText: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.tertiary,
+  },
+  versionDot: {
+    color: colors.border,
   },
 });

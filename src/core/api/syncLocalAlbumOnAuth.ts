@@ -1,5 +1,5 @@
 import type { AppDispatch, RootState } from '@core/store';
-import { mergeRemoteFotos, setRemoteAlbumId, setSyncError } from '@core/store/slices/albumSlice';
+import { mergeRemoteFotos, setPdfUrl, setRemoteAlbumId, setSyncError } from '@core/store/slices/albumSlice';
 import { getErrorMessage } from './errors';
 import { syncAlbumToCloud } from './albumSync';
 import { syncAlbumToApi } from './syncAlbum';
@@ -51,16 +51,22 @@ export async function syncLocalAlbumOnAuth(
   // Idempotent: already linked → update metadata/photos only
   try {
     if (current.remoteId) {
-      const remoteFotos = await syncAlbumToCloud({
+      const { remoteFotos, pdfUrl } = await syncAlbumToCloud({
         remoteId: current.remoteId,
         title: current.title || 'Mi álbum',
         story: description,
         photoUris: current.photos,
         remoteFotos: current.remoteFotos,
+        style: current.style,
+        onboardingStory: current.story,
+        fotosPorPagina: current.fotosPorPagina,
         onProgress,
       });
 
       dispatch(mergeRemoteFotos(remoteFotos));
+      if (pdfUrl) {
+        dispatch(setPdfUrl(pdfUrl));
+      }
       dispatch(setSyncError(null));
       return true;
     }
@@ -71,6 +77,9 @@ export async function syncLocalAlbumOnAuth(
       title: current.title || 'Mi álbum',
       description,
       photoUris: current.photos,
+      story: current.story,
+      style: current.style,
+      fotosPorPagina: current.fotosPorPagina,
       onProgress,
     });
 
@@ -81,6 +90,10 @@ export async function syncLocalAlbumOnAuth(
 
     if (Object.keys(result.remoteFotos).length > 0) {
       dispatch(mergeRemoteFotos(result.remoteFotos));
+    }
+
+    if (result.pdfUrl) {
+      dispatch(setPdfUrl(result.pdfUrl));
     }
 
     dispatch(setSyncError(null));

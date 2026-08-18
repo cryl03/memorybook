@@ -126,7 +126,21 @@ function renderPagePhotos(
   }
 
   const pagePhotos = page.photos;
-  const count = pagePhotos.length;
+  const layout = page.layout;
+
+  const maxForLayout =
+    layout === 'single' || layout === 'full-bleed'
+      ? 1
+      : layout === 'grid-2'
+        ? 2
+        : layout === 'collage'
+          ? 3
+          : layout === 'grid-4'
+            ? 4
+            : pagePhotos.length;
+
+  const visiblePhotos = pagePhotos.slice(0, Math.max(maxForLayout, 1));
+  const visibleCount = visiblePhotos.length;
 
   const renderPhoto = (photo: PagePhoto, photoIndex: number, containerStyle: object) => {
     const filterMeta = FILTERS.find(f => f.type === photo.filter);
@@ -153,38 +167,54 @@ function renderPagePhotos(
     );
   };
 
-  if (count === 1) {
+  // Prefer explicit page.layout (Diseño 1–4); fall back to photo count
+  if (layout === 'single' || layout === 'full-bleed' || (!layout && visibleCount === 1)) {
     return (
       <View style={styles.singlePhotoLayout}>
-        {renderPhoto(pagePhotos[0], 0, styles.singlePhoto)}
+        {renderPhoto(visiblePhotos[0], 0, styles.singlePhoto)}
       </View>
     );
   }
 
-  if (count === 2) {
+  if (layout === 'grid-2' || (!layout && visibleCount === 2)) {
     return (
       <View style={styles.stackedLayout}>
-        {renderPhoto(pagePhotos[0], 0, styles.stackedPhoto)}
-        {renderPhoto(pagePhotos[1], 1, styles.stackedPhoto)}
+        {visiblePhotos.slice(0, 2).map((photo, i) =>
+          renderPhoto(photo, i, styles.stackedPhoto),
+        )}
       </View>
     );
   }
 
-  if (count === 3) {
+  if (layout === 'collage' || (!layout && visibleCount === 3)) {
+    const rightPhotos = visiblePhotos.slice(1, 3);
+    const emptyRightSlots = Math.max(0, 2 - rightPhotos.length);
+
     return (
       <View style={styles.collageLayout}>
-        {renderPhoto(pagePhotos[0], 0, styles.collageBig)}
+        <View style={styles.collageLeftCol}>
+          {renderPhoto(visiblePhotos[0], 0, styles.collagePhoto)}
+        </View>
         <View style={styles.collageRightCol}>
-          {renderPhoto(pagePhotos[1], 1, styles.collageSmall)}
-          {renderPhoto(pagePhotos[2], 2, styles.collageSmall)}
+          {rightPhotos.map((photo, i) => (
+            <View key={`${photo.uri}-r${i + 1}`} style={styles.collageRightSlot}>
+              {renderPhoto(photo, i + 1, styles.collagePhoto)}
+            </View>
+          ))}
+          {Array.from({ length: emptyRightSlots }).map((_, i) => (
+            <View
+              key={`empty-r-${i}`}
+              style={[styles.collageRightSlot, styles.collageEmptySlot]}
+            />
+          ))}
         </View>
       </View>
     );
   }
 
   const rows: PagePhoto[][] = [];
-  for (let i = 0; i < pagePhotos.length; i += 2) {
-    rows.push(pagePhotos.slice(i, i + 2));
+  for (let i = 0; i < visiblePhotos.length; i += 2) {
+    rows.push(visiblePhotos.slice(i, i + 2));
   }
 
   return (
@@ -487,18 +517,37 @@ const styles = StyleSheet.create({
   collageLayout: {
     flex: 1,
     flexDirection: 'row',
+    alignItems: 'stretch',
     gap: PHOTO_GAP,
-    paddingVertical: spacing.xs,
   },
-  collageBig: {
-    flex: 1.12,
+  collageLeftCol: {
+    flex: 1,
+    minWidth: 0,
+  },
+  collageRightCol: {
+    flex: 1,
+    minWidth: 0,
+    gap: PHOTO_GAP,
+  },
+  collageRightSlot: {
+    flex: 1,
+    minHeight: 0,
+  },
+  collagePhoto: {
+    flex: 1,
     borderRadius: 1,
     overflow: 'hidden',
     backgroundColor: colors.surfaceSecondary,
   },
-  collageRightCol: {
+  collageEmptySlot: {
+    backgroundColor: 'rgba(0,0,0,0.03)',
+    borderRadius: 1,
+  },
+  collageBig: {
     flex: 1,
-    gap: PHOTO_GAP,
+    borderRadius: 1,
+    overflow: 'hidden',
+    backgroundColor: colors.surfaceSecondary,
   },
   collageSmall: {
     flex: 1,

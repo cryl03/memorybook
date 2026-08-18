@@ -1,21 +1,22 @@
 import React from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
-import { LayoutType, LAYOUTS } from '../types';
+import { DISENOS, DisenoPagina, LayoutType } from '../types';
 
 interface LayoutSelectorProps {
-  currentLayout: LayoutType;
-  onSelectLayout: (layout: LayoutType) => void;
+  currentDesign: DisenoPagina;
+  onSelectDesign: (design: DisenoPagina) => void;
 }
 
 /**
- * Simple icon representations for each layout using View-based shapes.
+ * Simple icon representations for each diseño (API FotosPorPagina 1–4).
  */
 function LayoutIcon({ type, active }: { type: LayoutType; active: boolean }) {
   const color = active ? colors.text.inverse : colors.text.secondary;
 
   switch (type) {
     case 'single':
+    case 'full-bleed':
       return (
         <View style={[iconStyles.box, { borderColor: color }]}>
           <View style={[iconStyles.innerFull, { backgroundColor: color }]} />
@@ -28,15 +29,6 @@ function LayoutIcon({ type, active }: { type: LayoutType; active: boolean }) {
           <View style={[iconStyles.innerHalf, { backgroundColor: color }]} />
         </View>
       );
-    case 'grid-4':
-      return (
-        <View style={[iconStyles.box, { borderColor: color, flexDirection: 'row', flexWrap: 'wrap', gap: 1 }]}>
-          <View style={[iconStyles.innerQuarter, { backgroundColor: color }]} />
-          <View style={[iconStyles.innerQuarter, { backgroundColor: color }]} />
-          <View style={[iconStyles.innerQuarter, { backgroundColor: color }]} />
-          <View style={[iconStyles.innerQuarter, { backgroundColor: color }]} />
-        </View>
-      );
     case 'collage':
       return (
         <View style={[iconStyles.box, { borderColor: color, flexDirection: 'row', gap: 1 }]}>
@@ -47,16 +39,21 @@ function LayoutIcon({ type, active }: { type: LayoutType; active: boolean }) {
           </View>
         </View>
       );
-    case 'full-bleed':
+    case 'grid-4':
       return (
-        <View style={[iconStyles.boxFull, { backgroundColor: color }]} />
+        <View style={[iconStyles.box, { borderColor: color, flexDirection: 'row', flexWrap: 'wrap', gap: 1 }]}>
+          <View style={[iconStyles.innerQuarter, { backgroundColor: color }]} />
+          <View style={[iconStyles.innerQuarter, { backgroundColor: color }]} />
+          <View style={[iconStyles.innerQuarter, { backgroundColor: color }]} />
+          <View style={[iconStyles.innerQuarter, { backgroundColor: color }]} />
+        </View>
       );
     default:
       return null;
   }
 }
 
-export function LayoutSelector({ currentLayout, onSelectLayout }: LayoutSelectorProps) {
+export function LayoutSelector({ currentDesign, onSelectDesign }: LayoutSelectorProps) {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>Diseño de página</Text>
@@ -64,24 +61,27 @@ export function LayoutSelector({ currentLayout, onSelectLayout }: LayoutSelector
         horizontal
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}>
-        {LAYOUTS.map(layout => (
+        {DISENOS.map(diseno => (
           <TouchableOpacity
-            key={layout.type}
+            key={diseno.design}
             style={[
               styles.layoutOption,
-              currentLayout === layout.type && styles.layoutOptionActive,
+              currentDesign === diseno.design && styles.layoutOptionActive,
             ]}
-            onPress={() => onSelectLayout(layout.type)}
-            accessibilityLabel={`Layout ${layout.label}`}
+            onPress={() => onSelectDesign(diseno.design)}
+            accessibilityLabel={diseno.label}
             accessibilityRole="button"
-            accessibilityState={{ selected: currentLayout === layout.type }}>
-            <LayoutIcon type={layout.type} active={currentLayout === layout.type} />
+            accessibilityState={{ selected: currentDesign === diseno.design }}>
+            <LayoutIcon
+              type={diseno.type}
+              active={currentDesign === diseno.design}
+            />
             <Text
               style={[
                 styles.layoutLabel,
-                currentLayout === layout.type && styles.layoutLabelActive,
+                currentDesign === diseno.design && styles.layoutLabelActive,
               ]}>
-              {layout.label}
+              {diseno.label}
             </Text>
           </TouchableOpacity>
         ))}

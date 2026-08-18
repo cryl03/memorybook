@@ -8,21 +8,65 @@ import {
   loadCoverText,
   saveCoverText,
 } from '@features/editor/storage';
-import { distributePhotosToPages } from '@features/editor/utils';
+import { redistributePagesWithDesign } from '@features/editor/utils';
 import type { LayoutType, PageData } from '@features/editor/types';
+import { fromEstiloDefault } from './estilo';
+import { albumIdsEqual } from './albumId';
+import { extractPdfUrl, resolveMediaUrl } from './pdfUrl';
 import { albumService } from './services/albumService';
+import { fotoService } from './services/fotoService';
+import type { Album, Foto } from './types';
+
+function resolveFotosPorPaginaValue(
+  value: Album['n_paginas'],
+): 1 | 2 | 3 | 4 {
+  if (value === 1 || value === 2 || value === 3 || value === 4) return value;
+  return 1;
+}
+
+async function loadFotosForAlbum(
+  albumId: string,
+  embedded?: Foto[],
+): Promise<Foto[]> {
+  if (embedded && embedded.length > 0) return embedded;
+
+  try {
+    const nested = await fotoService.listAlbumFotos(albumId);
+    if (nested.length > 0) return nested;
+  } catch {
+    // sandbox nested route often 404s — fall through
+  }
+
+  const all = await fotoService.listFotos();
+  return all.filter(foto => {
+    const albumRef =
+      typeof foto.album === 'object' && foto.album
+        ? foto.album.unique_id
+        : typeof foto.album === 'string'
+          ? foto.album
+          : foto.album_id;
+    return albumIdsEqual(albumRef, albumId);
+  });
+}
 
 export async function loadRemoteAlbumForEditor(
   albumId: string,
   dispatch: AppDispatch,
+  albumSnapshot?: Album | null,
 ): Promise<void> {
-  const album = await albumService.getAlbum(albumId);
-  const photoUris = (album.fotos ?? [])
+  // Prefer list snapshot — sandbox `retrieve` is broken (UUID routing)
+  const album =
+    albumSnapshot && albumIdsEqual(albumSnapshot.unique_id, albumId)
+      ? albumSnapshot
+      : await albumService.getAlbum(albumId);
+
+  const fotos = await loadFotosForAlbum(albumId, album.fotos);
+  const photoUris = fotos
     .map(foto => foto.imagen)
     .filter((uri): uri is string => Boolean(uri));
 
   const remoteFotos: Record<string, string> = {};
-  (album.fotos ?? []).forEach(foto => {
+  fotos.forEach(foto => {
     if (foto.imagen && foto.unique_id) {
       remoteFotos[foto.imagen] = foto.unique_id;
     }
@@ -30,10 +74,15 @@ export async function loadRemoteAlbumForEditor(
 
   const pageCount = pagesForPhotoCount(photoUris.length);
   const maxPhotos = resolvePackageCapacity(photoUris.length);
+  const { story: estiloStory, style } = fromEstiloDefault(
+    typeof album.estilo_default === 'string' ? album.estilo_default : null,
+  );
+  // API `n_paginas` = Diseño 1–4 (NOT page count)
+  const fotosPorPagina = resolveFotosPorPaginaValue(album.n_paginas);
 
-  // Restore cover text: local storage first, then album.descripcion from API (web)
   const savedCoverText =
     (await loadCoverText(albumId)) ||
+    (await loadCoverText(album.unique_id || '')) ||
     (await loadCoverText('local')) ||
     (album.descripcion ?? '').trim() ||
     '';
@@ -50,13 +99,18 @@ export async function loadRemoteAlbumForEditor(
     stickers: [],
   };
 
-  const distributed = distributePhotosToPages(photoUris, pageCount);
+  const distributed = redistributePagesWithDesign(
+    [],
+    photoUris,
+    fotosPorPagina,
+  ).filter(p => p.id !== 'page-cover');
 
   await clearAlbumStorage();
   await saveAlbumPages([coverPage, ...distributed]);
   await saveAlbumTitle(album.nombre);
   if (savedCoverText) {
-    await saveCoverText(albumId, savedCoverText);
+    const key = album.unique_id || albumId;
+    await saveCoverText(key, savedCoverText);
     await saveCoverText('local', savedCoverText);
   }
 
@@ -65,13 +119,17 @@ export async function loadRemoteAlbumForEditor(
       title: album.nombre,
       photoCount: maxPhotos,
       maxPhotos,
-      pageCount,
+      pageCount: Math.max(pageCount, distributed.length),
       photos: photoUris,
-      style: '',
-      story: album.descripcion ?? '',
+      style,
+      story: estiloStory || album.descripcion || '',
       coverText: savedCoverText,
+      fotosPorPagina,
       remoteId: album.unique_id ?? albumId,
       remoteFotos,
+      pdfUrl: album.pdf
+        ? resolveMediaUrl(album.pdf)
+        : extractPdfUrl(album) ?? undefined,
     }),
   );
 }

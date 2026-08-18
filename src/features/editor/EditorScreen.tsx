@@ -25,23 +25,26 @@ import {
   appendPhotos,
   setTitle as setAlbumTitle,
   setCoverText,
+  setFotosPorPagina,
 } from '@core/store/slices/albumSlice';
 import { deleteRemotePhoto } from '@core/api';
 import { getErrorMessage } from '@core/api/errors';
 import { PhotoActionSheet } from './components/PhotoActionSheet';
+import { LayoutSelector } from './components/LayoutSelector';
 import { OpenBookSpread, ClosedBookCover } from './components/OpenBookSpread';
 import { ReplacePhotoPicker } from './components/ReplacePhotoPicker';
 import { FilterPickerModal } from './components/FilterPickerModal';
 import { BookPageCurl } from './components/BookPageCurl';
 import LinearGradient from 'react-native-linear-gradient';
 import Geolocation from '@react-native-community/geolocation';
-import { PageData, LayoutType, FilterType, PagePhoto } from './types';
+import { PageData, LayoutType, FilterType, PagePhoto, DisenoPagina, disenoFromLayout } from './types';
 import { reverseGeocode } from './geocoding';
 import {
   distributePhotosToPages,
   placePhotosAcrossPages,
   countAvailablePhotoSlots,
   ensureAllPhotosOnPages,
+  redistributePagesWithDesign,
 } from './utils';
 import {
   saveAlbumPages,
@@ -262,6 +265,22 @@ export function EditorScreen({
     setShowPhotoActions(false);
     setSelectedPhotoIndex(null);
   }, []);
+
+  const currentDesign: DisenoPagina =
+    album.currentAlbum?.fotosPorPagina ??
+    (currentPageData && !isCoverPage
+      ? disenoFromLayout(currentPageData.layout)
+      : 1);
+
+  const handleSelectDesign = useCallback(
+    (design: DisenoPagina) => {
+      dispatch(setFotosPorPagina(design));
+      const next = redistributePagesWithDesign(pages, photos, design);
+      setPages(next);
+      setCurrentPage(page => Math.min(page, Math.max(0, next.length - 1)));
+    },
+    [dispatch, pages, photos],
+  );
 
   const openPhotoActions = useCallback((photoIndex: number) => {
     setSelectedPhotoIndex(photoIndex);
@@ -672,6 +691,12 @@ export function EditorScreen({
         keyboardShouldPersistTaps="handled"
         contentContainerStyle={styles.contentInner}>
         {renderBookPreview()}
+        {!isCoverPage ? (
+          <LayoutSelector
+            currentDesign={currentDesign}
+            onSelectDesign={handleSelectDesign}
+          />
+        ) : null}
         {isCoverPage || activeTab === 'textos' ? (
           <View style={styles.textInputContainer}>
             <TextInput

@@ -12,8 +12,12 @@ export interface AlbumState {
     story: string;
     /** Texto de portada — se sincroniza como `descripcion` del álbum en la API */
     coverText?: string;
+    /** API `n_paginas` — Diseño 1–4 (NOT page count) */
+    fotosPorPagina?: 1 | 2 | 3 | 4;
     remoteId?: string;
     remoteFotos?: Record<string, string>;
+    /** URL of generated album PDF (`POST /album/:id/pdf/`) */
+    pdfUrl?: string;
   } | null;
   isCreating: boolean;
   syncError: string | null;
@@ -48,6 +52,7 @@ const albumSlice = createSlice({
         photos: [],
         style: action.payload.style,
         story: action.payload.story,
+        fotosPorPagina: 1,
       };
     },
     setPhotos(state, action: PayloadAction<string[]>) {
@@ -106,6 +111,11 @@ const albumSlice = createSlice({
         state.currentAlbum.story = action.payload;
       }
     },
+    setFotosPorPagina(state, action: PayloadAction<1 | 2 | 3 | 4>) {
+      if (state.currentAlbum) {
+        state.currentAlbum.fotosPorPagina = action.payload;
+      }
+    },
     finishCreation(state) {
       state.isCreating = false;
       if (state.currentAlbum) {
@@ -133,6 +143,11 @@ const albumSlice = createSlice({
         };
       }
     },
+    setPdfUrl(state, action: PayloadAction<string | undefined>) {
+      if (state.currentAlbum) {
+        state.currentAlbum.pdfUrl = action.payload;
+      }
+    },
     setSyncError(state, action: PayloadAction<string | null>) {
       state.syncError = action.payload;
     },
@@ -152,14 +167,17 @@ const albumSlice = createSlice({
         style: string;
         story: string;
         coverText?: string;
+        fotosPorPagina?: 1 | 2 | 3 | 4;
         remoteId: string;
         remoteFotos?: Record<string, string>;
+        pdfUrl?: string;
       }>,
     ) {
       state.currentAlbum = {
         ...action.payload,
         maxPhotos: action.payload.maxPhotos ?? action.payload.photoCount,
         coverText: action.payload.coverText ?? action.payload.story ?? '',
+        fotosPorPagina: action.payload.fotosPorPagina ?? 1,
       };
       state.isCreating = false;
       state.syncError = null;
@@ -194,10 +212,12 @@ export const {
   setTitle,
   setCoverText,
   setStory,
+  setFotosPorPagina,
   finishCreation,
   setRemoteAlbumId,
   setRemoteFotos,
   mergeRemoteFotos,
+  setPdfUrl,
   setSyncError,
   loadFromRemote,
   resetAlbum,

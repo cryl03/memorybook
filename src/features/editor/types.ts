@@ -33,13 +33,36 @@ export interface PagePhoto {
   order: number;
 }
 
-export const LAYOUTS: { type: LayoutType; label: string }[] = [
-  { type: 'single', label: '1 foto' },
-  { type: 'grid-2', label: '2 fotos' },
-  { type: 'grid-4', label: '4 fotos' },
-  { type: 'collage', label: 'Collage' },
-  { type: 'full-bleed', label: 'Sin borde' },
+/** API `FotosPorPagina` — Diseño 1–4 */
+export type DisenoPagina = 1 | 2 | 3 | 4;
+
+export const DISENOS: {
+  design: DisenoPagina;
+  type: LayoutType;
+  label: string;
+}[] = [
+  { design: 1, type: 'single', label: 'Diseño 1' },
+  { design: 2, type: 'grid-2', label: 'Diseño 2' },
+  { design: 3, type: 'collage', label: 'Diseño 3' },
+  { design: 4, type: 'grid-4', label: 'Diseño 4' },
 ];
+
+/** @deprecated use DISENOS — kept for older imports */
+export const LAYOUTS: { type: LayoutType; label: string }[] = DISENOS.map(d => ({
+  type: d.type,
+  label: d.label,
+}));
+
+export function layoutFromDiseno(design: DisenoPagina): LayoutType {
+  return DISENOS.find(d => d.design === design)?.type ?? 'single';
+}
+
+export function disenoFromLayout(layout: LayoutType): DisenoPagina {
+  if (layout === 'full-bleed' || layout === 'single') return 1;
+  if (layout === 'grid-2') return 2;
+  if (layout === 'collage') return 3;
+  return 4;
+}
 
 export const FILTERS: { type: FilterType; label: string; color: string }[] = [
   { type: 'none', label: 'Original', color: 'transparent' },

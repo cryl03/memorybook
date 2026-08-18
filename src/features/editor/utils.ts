@@ -89,16 +89,94 @@ export function getMaxPhotosForLayout(layout: LayoutType): number {
       return 1;
     case 'grid-2':
       return 2;
-    case 'grid-4':
     case 'collage':
+      return 3;
+    case 'grid-4':
       return 4;
     default:
       return 4;
   }
 }
 
-/** Huecos preferidos por página: izquierda 1, derecha 2 (mismo patrón del álbum). */
-export function preferredSlotsForPage(pageIndex: number): number {
+/**
+ * Redistributes album photos using fixed slots-per-page (Diseño 1–4).
+ * Preserves cover page (index 0 / id page-cover).
+ */
+export function redistributePagesWithDesign(
+  pages: PageData[],
+  photoUris: string[],
+  fotosPorPagina: 1 | 2 | 3 | 4,
+): PageData[] {
+  const pageLayout: LayoutType =
+    fotosPorPagina === 1
+      ? 'single'
+      : fotosPorPagina === 2
+        ? 'grid-2'
+        : fotosPorPagina === 3
+          ? 'collage'
+          : 'grid-4';
+
+  const coverIndex = pages.findIndex(p => p.id === 'page-cover');
+  const cover = coverIndex >= 0 ? pages[coverIndex] : null;
+  const oldInterior = pages.filter(
+    (p, i) => p.id !== 'page-cover' && i !== coverIndex,
+  );
+
+  const interior: PageData[] = [];
+  let photoIndex = 0;
+  let pageNum = 0;
+
+  while (photoIndex < photoUris.length) {
+    const pagePhotos: PagePhoto[] = [];
+    while (
+      pagePhotos.length < fotosPorPagina &&
+      photoIndex < photoUris.length
+    ) {
+      pagePhotos.push({
+        uri: photoUris[photoIndex],
+        filter: 'none',
+        order: pagePhotos.length,
+      });
+      photoIndex += 1;
+    }
+
+    interior.push({
+      id: `page-${pageNum}`,
+      photos: pagePhotos,
+      layout: pageLayout,
+      text: oldInterior[pageNum]?.text ?? {
+        content: '',
+        fontSize: 14,
+        alignment: 'center',
+      },
+      stickers: oldInterior[pageNum]?.stickers ?? [],
+    });
+    pageNum += 1;
+  }
+
+  if (interior.length === 0) {
+    interior.push({
+      id: 'page-0',
+      photos: [],
+      layout: pageLayout,
+      text: { content: '', fontSize: 14, alignment: 'center' },
+      stickers: [],
+    });
+  }
+
+  if (cover) {
+    return [cover, ...interior];
+  }
+
+  return interior;
+}
+
+/** Huecos según diseño de la página; fallback patrón 1/2. */
+export function preferredSlotsForPage(
+  pageIndex: number,
+  layout?: LayoutType,
+): number {
+  if (layout) return getMaxPhotosForLayout(layout);
   if (pageIndex <= 0) return 1;
   return (pageIndex - 1) % 2 === 0 ? 1 : 2;
 }
@@ -180,7 +258,10 @@ export function placePhotosAcrossPages(
     if (cursor >= uris.length) break;
     if (pageIndex === 0 && startPageIndex !== 0) continue;
 
-    const preferred = preferredSlotsForPage(pageIndex);
+    const preferred = preferredSlotsForPage(
+      pageIndex,
+      next[pageIndex].layout,
+    );
     const currentCount = next[pageIndex].photos.length;
     const room = preferred - currentCount;
     if (room <= 0) continue;
@@ -269,7 +350,8 @@ export function countAvailablePhotoSlots(
 
   for (const pageIndex of order) {
     if (pageIndex === 0 && startPageIndex !== 0) continue;
-    slots += Math.max(0, 4 - (pages[pageIndex]?.photos.length ?? 0));
+    const max = getMaxPhotosForLayout(pages[pageIndex]?.layout ?? 'grid-4');
+    slots += Math.max(0, max - (pages[pageIndex]?.photos.length ?? 0));
   }
 
   // Always allow adding more by creating new pages later

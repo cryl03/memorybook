@@ -4,9 +4,11 @@ import LinearGradient from 'react-native-linear-gradient';
 import { colors, typography, spacing } from '@core/theme';
 import { botImage } from '@core/assets/images';
 import { useAppDispatch, useAppSelector } from '@core/store/hooks';
-import { setRemoteAlbumId, setSyncError, mergeRemoteFotos } from '@core/store/slices/albumSlice';
+import { setRemoteAlbumId, setSyncError, mergeRemoteFotos, setPdfUrl } from '@core/store/slices/albumSlice';
+import { store } from '@core/store';
 import { syncAlbumToApi } from '@core/api/syncAlbum';
 import { getErrorMessage } from '@core/api/errors';
+import { ALLOW_GUEST_FLOW } from '@core/api';
 
 const MIN_DISPLAY_MS = 4000;
 
@@ -26,9 +28,15 @@ export function CreatingScreen({ onComplete }: CreatingScreenProps) {
   const onCompleteRef = useRef(onComplete);
   onCompleteRef.current = onComplete;
 
-  // Snapshot once — album identity must NOT re-trigger createAlbum
+  // Snapshot once — album identity must NOT re-trigger createAlbum.
+  // Refresh if first paint had album without photos yet.
   const albumSnapshotRef = useRef(album);
   if (!albumSnapshotRef.current && album) {
+    albumSnapshotRef.current = album;
+  } else if (
+    album?.photos?.length &&
+    !(albumSnapshotRef.current?.photos?.length)
+  ) {
     albumSnapshotRef.current = album;
   }
 
@@ -74,18 +82,38 @@ export function CreatingScreen({ onComplete }: CreatingScreenProps) {
       }).start();
 
       try {
-        const alreadyRemote = Boolean(snapshot?.remoteId);
-        if (
+        const live = store.getState().album.currentAlbum;
+        const alreadyRemote = Boolean(live?.remoteId ?? snapshot?.remoteId);
+        const photoUris =
+          (live?.photos?.length ? live.photos : snapshot?.photos) ?? [];
+
+        console.log('[FOTOS] CreatingScreen', {
+          auth: isAuthenticated,
+          alreadyRemote,
+          snapshotCount: snapshot?.photos?.length ?? 0,
+          liveCount: live?.photos?.length ?? 0,
+          using: photoUris.length,
+          sample: photoUris[0]?.slice(0, 96),
+        });
+
+        if (!isAuthenticated && !ALLOW_GUEST_FLOW) {
+          dispatch(
+            setSyncError('Inicia sesión para crear el álbum en la nube'),
+          );
+        } else if (
           isAuthenticated &&
-          snapshot &&
+          (live || snapshot) &&
           !alreadyRemote &&
           !syncStartedRef.current
         ) {
           syncStartedRef.current = true;
           const result = await syncAlbumToApi({
-            title: snapshot.title || 'Mi álbum',
-            description: snapshot.story,
-            photoUris: snapshot.photos,
+            title: live?.title || snapshot?.title || 'Mi álbum',
+            description: live?.story ?? snapshot?.story,
+            photoUris,
+            story: live?.story ?? snapshot?.story,
+            style: live?.style ?? snapshot?.style,
+            fotosPorPagina: live?.fotosPorPagina ?? snapshot?.fotosPorPagina,
             onProgress: (step, value) => {
               if (!cancelled) {
                 setStatusText(step);
@@ -100,6 +128,9 @@ export function CreatingScreen({ onComplete }: CreatingScreenProps) {
             dispatch(setRemoteAlbumId(result.album.unique_id));
             if (Object.keys(result.remoteFotos).length > 0) {
               dispatch(mergeRemoteFotos(result.remoteFotos));
+            }
+            if (result.pdfUrl) {
+              dispatch(setPdfUrl(result.pdfUrl));
             }
             dispatch(setSyncError(null));
           }

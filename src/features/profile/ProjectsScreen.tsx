@@ -13,6 +13,7 @@ import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { albumService } from '@core/api';
 import type { Album } from '@core/api/types';
 import { getErrorMessage } from '@core/api/errors';
+import { ALLOW_GUEST_FLOW } from '@core/api';
 import { useAppSelector } from '@core/store/hooks';
 import {
   getLocalAlbumSummary,
@@ -22,7 +23,7 @@ import {
 
 interface ProjectsScreenProps {
   onBack: () => void;
-  onEdit: (projectId: string) => Promise<void>;
+  onEdit: (projectId: string, album?: Album) => Promise<void>;
   onCreateNew: () => void;
 }
 
@@ -75,8 +76,10 @@ export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenPr
 
     try {
       const response = await albumService.listAlbums();
-      setAlbums(response.results);
+      setAlbums(response.results ?? []);
+      setError(null);
     } catch (err) {
+      setAlbums([]);
       setError(getErrorMessage(err, 'No se pudieron cargar los proyectos'));
     } finally {
       setIsLoading(false);
@@ -90,12 +93,16 @@ export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenPr
   );
 
   const handleOpenProject = useCallback(
-    async (projectId: string) => {
+    async (projectId: string, album?: Album) => {
       setOpeningId(projectId);
+      setError(null);
       try {
-        await onEdit(projectId);
+        await onEdit(projectId, album);
       } catch (err) {
-        setError(getErrorMessage(err, 'No se pudo abrir el proyecto'));
+        Alert.alert(
+          'No se pudo abrir',
+          getErrorMessage(err, 'No se pudo abrir el proyecto'),
+        );
       } finally {
         setOpeningId(null);
       }
@@ -137,7 +144,8 @@ export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenPr
 
   const recentProjects = useMemo(() => albums.slice(0, 1), [albums]);
   const otherProjects = useMemo(() => albums.slice(1), [albums]);
-  const showGuestProjects = !auth.isAuthenticated && Boolean(localAlbum);
+  const showGuestProjects =
+    ALLOW_GUEST_FLOW && !auth.isAuthenticated && Boolean(localAlbum);
 
   return (
     <View style={styles.container}>
@@ -197,7 +205,7 @@ export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenPr
                     recent
                     loading={openingId === project.unique_id}
                     deleting={deletingId === project.unique_id}
-                    onPress={() => handleOpenProject(project.unique_id!)}
+                    onPress={() => handleOpenProject(project.unique_id!, project)}
                     onDelete={() => handleDeleteProject(project)}
                   />
                 ))}
@@ -213,7 +221,7 @@ export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenPr
                     album={project}
                     loading={openingId === project.unique_id}
                     deleting={deletingId === project.unique_id}
-                    onPress={() => handleOpenProject(project.unique_id!)}
+                    onPress={() => handleOpenProject(project.unique_id!, project)}
                     onDelete={() => handleDeleteProject(project)}
                   />
                 ))}

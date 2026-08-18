@@ -51,7 +51,7 @@ export function LoginScreen({ onSuccess, onBack, onRegister }: LoginScreenProps)
 
       <Text style={styles.title}>Iniciar sesión</Text>
       <Text style={styles.subtitle}>
-        Al entrar, tu álbum local se sincronizará automáticamente con tu cuenta.
+        Con tu cuenta conectamos con Memora y generamos tu álbum.
       </Text>
 
       <View style={styles.form}>

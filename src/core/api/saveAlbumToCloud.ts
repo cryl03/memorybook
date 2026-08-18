@@ -6,6 +6,7 @@ import {
   mergeRemoteFotos,
   setSyncError,
   setTitle,
+  setPdfUrl,
 } from '@core/store/slices/albumSlice';
 import { syncLocalAlbumOnAuth } from './syncLocalAlbumOnAuth';
 import { loadCoverText } from '@features/editor/storage';
@@ -61,16 +62,22 @@ export async function saveAlbumToCloud(
       const title = titleOverride ?? current.title;
 
       try {
-        const remoteFotos = await syncAlbumToCloud({
+        const { remoteFotos, pdfUrl } = await syncAlbumToCloud({
           remoteId: current.remoteId,
           title,
           story: description,
           photoUris: current.photos,
           remoteFotos: current.remoteFotos,
+          style: current.style,
+          onboardingStory: current.story,
+          fotosPorPagina: current.fotosPorPagina,
           onProgress,
         });
 
         dispatch(mergeRemoteFotos(remoteFotos));
+        if (pdfUrl) {
+          dispatch(setPdfUrl(pdfUrl));
+        }
         dispatch(setTitle(title));
         dispatch(setSyncError(null));
         return true;

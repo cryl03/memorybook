@@ -98,6 +98,35 @@ npm run lint
 ```sh
 npm test
 ```
+### Subir versión de la app (iOS + Android)
+Fuente de verdad: `package.json` (`version` + `buildNumber`).
+
+Corre **antes de cada build / release** a tiendas. El script sube el patch (y el build) y sincroniza ambas plataformas:
+
+```sh
+npm run version:bump
+```
+
+Ejemplo: `1.0.0` (build `1`) → `1.0.1` (build `2`).
+
+| Campo | package.json | iOS | Android |
+| --- | --- | --- | --- |
+| Versión de marketing | `version` | `MARKETING_VERSION` | `versionName` |
+| Número de build | `buildNumber` | `CURRENT_PROJECT_VERSION` | `versionCode` |
+
+Otras opciones:
+
+```sh
+# Alinear nativos con package.json sin incrementar
+npm run version:sync
+
+# Bumps minor / major
+node scripts/bump-version.js --minor
+node scripts/bump-version.js --major
+```
+
+La versión se muestra en la pantalla de Perfil (`Versión X.Y.Z · Build N`).
+
 ### Error de comprobación de tipo en ejecución
 ```sh
 npm run type-check

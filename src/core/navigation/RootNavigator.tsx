@@ -20,7 +20,7 @@ import {
 import { resolveAlbumMaxPhotos } from '@core/store/albumUtils';
 import { loadSession } from '@core/storage/sessionStorage';
 import { hasSavedAlbum, syncPagesWithPhotos } from '@features/editor/storage';
-import { loadRemoteAlbumForEditor, saveAlbumToCloud, albumNeedsCloudSync, syncLocalAlbumOnAuth } from '@core/api';
+import { loadRemoteAlbumForEditor, saveAlbumToCloud, albumNeedsCloudSync, syncLocalAlbumOnAuth, ALLOW_GUEST_FLOW } from '@core/api';
 import { getErrorMessage } from '@core/api/errors';
 import { isLocalAlbumId } from '@core/storage/localAlbum';
 import { clearSession } from '@core/storage/sessionStorage';
@@ -50,13 +50,25 @@ import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
+function hasAuthSession(
+  session: Awaited<ReturnType<typeof loadSession>>,
+): boolean {
+  return Boolean(session?.auth?.token && session.auth.isAuthenticated);
+}
+
 async function resolveInitialRoute(): Promise<keyof RootStackParamList> {
   const [session, savedAlbum] = await Promise.all([loadSession(), hasSavedAlbum()]);
+  const signedIn = hasAuthSession(session);
 
-  if (savedAlbum) return 'Editor';
+  if (!ALLOW_GUEST_FLOW && !signedIn) {
+    return 'Presentation';
+  }
+
+  // Prefer Wow (generated album) over Editor — saved pages always exist after create
   if (session?.album.currentAlbum) {
     return session.album.isCreating ? 'Creating' : 'Wow';
   }
+  if (savedAlbum) return 'Editor';
   if (session?.user.isOnboarded) return 'MainTabs';
   return 'Presentation';
 }
@@ -116,6 +128,13 @@ export function RootNavigator() {
         }
 
         if (!isAuthenticated) {
+          if (!ALLOW_GUEST_FLOW) {
+            Alert.alert(
+              'Inicia sesión',
+              'Necesitas una cuenta para guardar el álbum en la nube.',
+            );
+            return false;
+          }
           Alert.alert(
             'Guardado en el dispositivo',
             'Tu álbum quedó guardado aquí. Inicia sesión cuando quieras sincronizarlo a la nube.',
@@ -144,7 +163,7 @@ export function RootNavigator() {
       syncInFlightRef.current = true;
 
       try {
-        if (albumNeedsCloudSync(store.getState())) {
+        if (albumNeedsCloudSync(store.getState()) && ALLOW_GUEST_FLOW) {
           setSyncOverlay({ visible: true, step: 'Preparando sincronización', progress: 0 });
 
           try {
@@ -168,7 +187,9 @@ export function RootNavigator() {
           }
         }
 
-        navigation.navigate('MainTabs');
+        navigation.navigate(
+          store.getState().user.isOnboarded ? 'MainTabs' : 'OnboardingChat',
+        );
       } finally {
         syncInFlightRef.current = false;
       }
@@ -185,10 +206,15 @@ export function RootNavigator() {
 
   const handleCreateNewAlbum = useCallback(
     (navigation: NativeStackNavigationProp<RootStackParamList>) => {
+      if (!ALLOW_GUEST_FLOW && !store.getState().auth.isAuthenticated) {
+        navigation.navigate('Login');
+        return;
+      }
+
       const startFresh = async () => {
         dispatch(resetAlbum());
         await clearAlbumStorage();
-        navigation.navigate('PhotoCount');
+        navigation.push('OnboardingChat', { skipIntro: true });
       };
 
       const hasAlbum = Boolean(store.getState().album.currentAlbum?.photos.length);
@@ -294,7 +320,16 @@ export function RootNavigator() {
         <Stack.Screen name="Presentation">
           {({ navigation }) => (
             <PresentationScreen
-              onNext={() => navigation.navigate('OnboardingChat')}
+              onNext={() => {
+                if (
+                  ALLOW_GUEST_FLOW ||
+                  store.getState().auth.isAuthenticated
+                ) {
+                  navigation.navigate('OnboardingChat');
+                  return;
+                }
+                navigation.navigate('Login');
+              }}
               onLogin={() => navigation.navigate('Login')}
             />
           )}
@@ -325,20 +360,26 @@ export function RootNavigator() {
         </Stack.Screen>
 
         <Stack.Screen name="OnboardingChat">
-          {({ navigation }) => (
-            <OnboardingChatScreen
-              onComplete={(answers: OnboardingAnswers) => {
-                dispatch(
-                  completeOnboarding({
-                    name: answers.name,
-                    style: answers.style,
-                    story: answers.story,
-                  }),
-                );
-                navigation.navigate('PhotoCount');
-              }}
-            />
-          )}
+          {({ navigation, route }) => {
+            const skipIntro = Boolean(route.params?.skipIntro);
+            return (
+              <OnboardingChatScreen
+                skipIntro={skipIntro}
+                existingName={user.name}
+                onBack={skipIntro ? () => navigation.goBack() : undefined}
+                onComplete={(answers: OnboardingAnswers) => {
+                  dispatch(
+                    completeOnboarding({
+                      name: answers.name || user.name,
+                      style: answers.style,
+                      story: answers.story,
+                    }),
+                  );
+                  navigation.navigate('PhotoCount');
+                }}
+              />
+            );
+          }}
         </Stack.Screen>
 
         {/* Album creation flow */}
@@ -368,18 +409,17 @@ export function RootNavigator() {
                 if (route.params.existingPhotos) {
                   dispatch(appendPhotos(photos));
                   const current = store.getState().album.currentAlbum;
-                  if (current) {
+                  if (route.params.returnTo === 'Editor' && current) {
                     await syncPagesWithPhotos(current.photos, current.pageCount);
+                  }
+                  if (route.params.returnTo !== 'Editor' && current?.remoteId) {
+                    await handlePersistAlbum({ showOverlay: true });
                   }
                   navigation.navigate(route.params.returnTo ?? 'Wow');
                   return;
                 }
 
                 dispatch(setPhotos(photos));
-                const created = store.getState().album.currentAlbum;
-                if (created) {
-                  await syncPagesWithPhotos(photos, created.pageCount);
-                }
                 dispatch(startCreation());
                 navigation.navigate('Creating');
               }}
@@ -404,8 +444,6 @@ export function RootNavigator() {
           {({ navigation }) => (
             <WowScreen
               albumTitle={album.currentAlbum?.title || 'Verano en la playa'}
-              photoCount={album.currentAlbum?.photos.length || 0}
-              pageCount={album.currentAlbum?.pageCount || 28}
               onEdit={() => navigation.navigate('Editor')}
               onBuy={() => navigation.navigate('Checkout')}
               onAddPhotos={() => openAddPhotos(navigation, 'Wow')}
@@ -453,12 +491,12 @@ export function RootNavigator() {
         <Stack.Screen name="MainTabs">
           {({ navigation }) => (
             <ProfileNavigator
-              onEditProject={async (projectId: string) => {
+              onEditProject={async (projectId, album) => {
                 if (isLocalAlbumId(projectId)) {
                   navigation.navigate('Editor');
                   return;
                 }
-                await loadRemoteAlbumForEditor(projectId, dispatch);
+                await loadRemoteAlbumForEditor(projectId, dispatch, album);
                 navigation.navigate('Editor');
               }}
               onCreateNewAlbum={() => handleCreateNewAlbum(navigation)}
