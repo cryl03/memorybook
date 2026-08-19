@@ -26,7 +26,7 @@ export const memoraApi = {
 
 export { albumService, authService, fotoService };
 export { syncAlbumToApi } from './syncAlbum';
-export { loadRemoteAlbumForEditor } from './loadRemoteAlbum';
+export { loadRemoteAlbumForEditor, openRemoteAlbumForPreview } from './loadRemoteAlbum';
 export {
   syncAlbumMetadata,
   generateAlbumPdf,

@@ -10,7 +10,8 @@ const { width } = Dimensions.get('window');
 
 interface WowScreenProps {
   albumTitle: string;
-  onEdit: () => void;
+  onBack?: () => void;
+  onEdit?: () => void;
   onBuy: () => void;
   onSave: () => void | Promise<void>;
   onAddPhotos: () => void;
@@ -18,7 +19,7 @@ interface WowScreenProps {
 
 export function WowScreen({
   albumTitle,
-  onEdit,
+  onBack,
   onBuy,
   onSave,
   onAddPhotos,
@@ -53,6 +54,15 @@ export function WowScreen({
     <LinearGradient
       colors={['#FAF7F2', '#FAF7F2']}
       style={styles.container}>
+      {onBack ? (
+        <TouchableOpacity
+          onPress={onBack}
+          style={styles.backButton}
+          accessibilityLabel="Volver"
+          accessibilityRole="button">
+          <Text style={styles.backText}>Volver</Text>
+        </TouchableOpacity>
+      ) : null}
       {/* Closed cover only — no glow circle */}
       <View style={styles.bookWrapper}>
         <View style={[styles.bookCover, showPdf ? styles.bookCoverPdf : null]}>
@@ -175,10 +185,6 @@ export function WowScreen({
           </Text>
         </TouchableOpacity>
       </View>
-
-      <TouchableOpacity onPress={onEdit} style={styles.editLink}>
-        <Text style={styles.editLinkText}>Editar</Text>
-      </TouchableOpacity>
     </LinearGradient>
   );
 }
@@ -188,6 +194,15 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     paddingTop: spacing['4xl'],
+  },
+  backButton: {
+    alignSelf: 'flex-start',
+    paddingHorizontal: spacing['3xl'],
+    marginBottom: spacing.md,
+  },
+  backText: {
+    fontSize: typography.sizes.md,
+    color: colors.text.secondary,
   },
   bookWrapper: {
     alignItems: 'center',
@@ -299,7 +314,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     paddingHorizontal: spacing['3xl'],
     gap: spacing.md,
-    marginBottom: spacing.xl,
+    marginBottom: spacing['4xl'],
     width: '100%',
     alignItems: 'center',
   },
@@ -337,15 +352,5 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.md,
     fontWeight: typography.weights.semibold,
     color: colors.text.inverse,
-  },
-  editLink: {
-    alignItems: 'center',
-    paddingBottom: spacing['4xl'],
-  },
-  editLinkText: {
-    fontSize: typography.sizes.md,
-    fontWeight: typography.weights.bold,
-    color: colors.text.primary,
-    textDecorationLine: 'underline',
   },
 });

@@ -30,6 +30,19 @@ export async function listAlbums(page = 1): Promise<PaginatedResponse<Album>> {
   );
 }
 
+export async function listAllAlbums(): Promise<Album[]> {
+  const all: Album[] = [];
+  let page = 1;
+  for (;;) {
+    const response = await listAlbums(page);
+    all.push(...(response.results ?? []));
+    if (!response.next || response.results.length === 0 || page > 20) {
+      return all;
+    }
+    page += 1;
+  }
+}
+
 /**
  * Prefer paginado (includes nested fotos) — sandbox `retrieve` UUID routing
  * often 404s. Fall back to retrieve only if not found in list.
@@ -114,13 +127,22 @@ export async function patchAlbum(
 export async function deleteAlbum(id: string): Promise<void> {
   const dashed = albumPathId(id);
   const undashed = id.replace(/-/g, '');
+  const ids = [...new Set([dashed, undashed, id].filter(Boolean))];
+  const paths = ids.flatMap(albumId => [
+    `/album/delete/${albumId}`,
+    `/album/delete/${albumId}/`,
+  ]);
 
-  try {
-    await apiRequest<void>(`/album/delete/${dashed}`, { method: 'DELETE' });
-  } catch (dashedError) {
-    if (undashed === dashed) throw dashedError;
-    await apiRequest<void>(`/album/delete/${undashed}`, { method: 'DELETE' });
+  let lastError: unknown;
+  for (const path of paths) {
+    try {
+      await apiRequest<void>(path, { method: 'DELETE' });
+      return;
+    } catch (error) {
+      lastError = error;
+    }
   }
+  throw lastError;
 }
 
 export async function getAlbumPagina(
@@ -320,6 +342,7 @@ export async function submitStyleSelector(
 
 export const albumService = {
   listAlbums,
+  listAllAlbums,
   getAlbum,
   retrieveAlbum,
   createAlbum,

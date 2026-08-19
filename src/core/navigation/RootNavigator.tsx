@@ -20,7 +20,7 @@ import {
 import { resolveAlbumMaxPhotos } from '@core/store/albumUtils';
 import { loadSession } from '@core/storage/sessionStorage';
 import { hasSavedAlbum, syncPagesWithPhotos } from '@features/editor/storage';
-import { loadRemoteAlbumForEditor, saveAlbumToCloud, albumNeedsCloudSync, syncLocalAlbumOnAuth, ALLOW_GUEST_FLOW } from '@core/api';
+import { openRemoteAlbumForPreview, saveAlbumToCloud, albumNeedsCloudSync, syncLocalAlbumOnAuth, ALLOW_GUEST_FLOW } from '@core/api';
 import { getErrorMessage } from '@core/api/errors';
 import { isLocalAlbumId } from '@core/storage/localAlbum';
 import { clearSession } from '@core/storage/sessionStorage';
@@ -444,11 +444,17 @@ export function RootNavigator() {
           {({ navigation }) => (
             <WowScreen
               albumTitle={album.currentAlbum?.title || 'Verano en la playa'}
-              onEdit={() => navigation.navigate('Editor')}
+              onBack={() => navigation.navigate('MainTabs')}
               onBuy={() => navigation.navigate('Checkout')}
               onAddPhotos={() => openAddPhotos(navigation, 'Wow')}
               onSave={async () => {
-                await handlePersistAlbum({ showOverlay: true });
+                const ok = await handlePersistAlbum({
+                  showOverlay: true,
+                  silentAlert: true,
+                });
+                if (ok) {
+                  navigation.navigate('MainTabs');
+                }
               }}
             />
           )}
@@ -491,13 +497,19 @@ export function RootNavigator() {
         <Stack.Screen name="MainTabs">
           {({ navigation }) => (
             <ProfileNavigator
-              onEditProject={async (projectId, album) => {
+              onEditProject={async (projectId, albumSnapshot) => {
                 if (isLocalAlbumId(projectId)) {
-                  navigation.navigate('Editor');
+                  if (ALLOW_GUEST_FLOW) {
+                    navigation.navigate('Editor');
+                  }
                   return;
                 }
-                await loadRemoteAlbumForEditor(projectId, dispatch, album);
-                navigation.navigate('Editor');
+                await openRemoteAlbumForPreview(
+                  projectId,
+                  dispatch,
+                  albumSnapshot,
+                );
+                navigation.navigate('Wow');
               }}
               onCreateNewAlbum={() => handleCreateNewAlbum(navigation)}
               onLogin={() => navigation.navigate('Login')}

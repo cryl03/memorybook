@@ -14,6 +14,10 @@ import { albumService } from '@core/api';
 import type { Album } from '@core/api/types';
 import { getErrorMessage } from '@core/api/errors';
 import { ALLOW_GUEST_FLOW } from '@core/api';
+import { albumIdsEqual } from '@core/api/albumId';
+import { resolveMediaUrl } from '@core/api/pdfUrl';
+import { store } from '@core/store';
+import { resetAlbum } from '@core/store/slices/albumSlice';
 import { useAppSelector } from '@core/store/hooks';
 import {
   getLocalAlbumSummary,
@@ -49,7 +53,8 @@ function formatRelativeDate(dateString?: string): string {
 
 function getCoverUri(album: Album): string | null {
   const firstPhoto = album.fotos?.[0];
-  return firstPhoto?.imagen ?? null;
+  if (!firstPhoto?.imagen) return null;
+  return resolveMediaUrl(firstPhoto.imagen);
 }
 
 export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenProps) {
@@ -75,8 +80,8 @@ export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenPr
     setError(null);
 
     try {
-      const response = await albumService.listAlbums();
-      setAlbums(response.results ?? []);
+      const results = await albumService.listAllAlbums();
+      setAlbums(results);
       setError(null);
     } catch (err) {
       setAlbums([]);
@@ -112,7 +117,11 @@ export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenPr
 
   const handleDeleteProject = useCallback(
     (project: Album) => {
-      if (!project.unique_id) return;
+      const albumId = project.unique_id;
+      if (!albumId) {
+        Alert.alert('No se pudo eliminar', 'Este álbum no tiene identificador.');
+        return;
+      }
 
       Alert.alert(
         'Eliminar álbum',
@@ -123,14 +132,22 @@ export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenPr
             text: 'Eliminar',
             style: 'destructive',
             onPress: async () => {
-              setDeletingId(project.unique_id!);
+              setDeletingId(albumId);
               try {
-                await albumService.deleteAlbum(project.unique_id!);
+                await albumService.deleteAlbum(albumId);
                 setAlbums(current =>
-                  current.filter(item => item.unique_id !== project.unique_id),
+                  current.filter(item => !albumIdsEqual(item.unique_id, albumId)),
                 );
+                const currentRemote =
+                  store.getState().album.currentAlbum?.remoteId;
+                if (albumIdsEqual(currentRemote, albumId)) {
+                  store.dispatch(resetAlbum());
+                }
               } catch (err) {
-                setError(getErrorMessage(err, 'No se pudo eliminar el álbum'));
+                Alert.alert(
+                  'No se pudo eliminar',
+                  getErrorMessage(err, 'No se pudo eliminar el álbum'),
+                );
               } finally {
                 setDeletingId(null);
               }
@@ -231,9 +248,9 @@ export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenPr
         )
       ) : !showGuestProjects ? (
         <View style={styles.centered}>
-          <Text style={styles.empty}>
-            Crea un álbum y se guardará aquí automáticamente, sin necesidad de cuenta.
-          </Text>
+            <Text style={styles.empty}>
+              Inicia sesión para ver tus álbumes en la nube.
+            </Text>
         </View>
       ) : null}
     </View>
@@ -290,33 +307,41 @@ function ProjectCard({
   const coverUri = getCoverUri(album);
 
   return (
-    <TouchableOpacity
-      style={[styles.projectCard, recent && styles.projectCardRecent]}
-      onPress={onPress}
-      disabled={loading || deleting}>
-      {coverUri ? (
-        <Image source={{ uri: coverUri }} style={styles.projectThumb} />
-      ) : (
-        <View style={styles.projectThumb} />
-      )}
-      <View style={styles.projectInfo}>
-        <Text style={styles.projectTitle}>{album.nombre}</Text>
-        <Text style={styles.projectDate}>
-          {deleting
-            ? 'Eliminando...'
-            : loading
-              ? 'Abriendo...'
-              : formatRelativeDate(album.fecha_modificacion ?? album.fecha_creacion)}
-        </Text>
-      </View>
+    <View style={[styles.projectCard, recent && styles.projectCardRecent]}>
+      <TouchableOpacity
+        style={styles.projectMain}
+        onPress={onPress}
+        disabled={loading || deleting}
+        accessibilityRole="button"
+        accessibilityLabel={`Abrir ${album.nombre}`}>
+        {coverUri ? (
+          <Image source={{ uri: coverUri }} style={styles.projectThumb} />
+        ) : (
+          <View style={styles.projectThumb} />
+        )}
+        <View style={styles.projectInfo}>
+          <Text style={styles.projectTitle}>{album.nombre}</Text>
+          <Text style={styles.projectDate}>
+            {deleting
+              ? 'Eliminando...'
+              : loading
+                ? 'Abriendo...'
+                : formatRelativeDate(album.fecha_modificacion ?? album.fecha_creacion)}
+          </Text>
+        </View>
+      </TouchableOpacity>
       {loading || deleting ? (
         <ActivityIndicator color={colors.text.primary} />
       ) : (
-        <TouchableOpacity onPress={onDelete} hitSlop={8}>
+        <TouchableOpacity
+          onPress={onDelete}
+          hitSlop={12}
+          accessibilityRole="button"
+          accessibilityLabel={`Eliminar ${album.nombre}`}>
           <Text style={styles.deleteText}>Eliminar</Text>
         </TouchableOpacity>
       )}
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -403,6 +428,11 @@ const styles = StyleSheet.create({
   },
   projectCardRecent: {
     backgroundColor: colors.accent.peach,
+  },
+  projectMain: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   projectThumb: {
     width: 40,

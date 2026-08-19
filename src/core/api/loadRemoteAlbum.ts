@@ -13,6 +13,7 @@ import type { LayoutType, PageData } from '@features/editor/types';
 import { fromEstiloDefault } from './estilo';
 import { albumIdsEqual } from './albumId';
 import { extractPdfUrl, resolveMediaUrl } from './pdfUrl';
+import { clearCachedPdf } from './pdfCache';
 import { albumService } from './services/albumService';
 import { fotoService } from './services/fotoService';
 import type { Album, Foto } from './types';
@@ -130,6 +131,61 @@ export async function loadRemoteAlbumForEditor(
       pdfUrl: album.pdf
         ? resolveMediaUrl(album.pdf)
         : extractPdfUrl(album) ?? undefined,
+    }),
+  );
+}
+
+/** Open cloud album on Wow (backend PDF). Does not hydrate the local editor. */
+export async function openRemoteAlbumForPreview(
+  albumId: string,
+  dispatch: AppDispatch,
+  albumSnapshot?: Album | null,
+): Promise<void> {
+  const album =
+    albumSnapshot && albumIdsEqual(albumSnapshot.unique_id, albumId)
+      ? albumSnapshot
+      : await albumService.getAlbum(albumId);
+
+  const remoteId = album.unique_id ?? albumId;
+  const fotos = await loadFotosForAlbum(albumId, album.fotos);
+  const photoUris = fotos
+    .map(foto => (foto.imagen ? resolveMediaUrl(foto.imagen) : null))
+    .filter((uri): uri is string => Boolean(uri));
+
+  const remoteFotos: Record<string, string> = {};
+  fotos.forEach(foto => {
+    if (foto.imagen && foto.unique_id) {
+      remoteFotos[resolveMediaUrl(foto.imagen)] = foto.unique_id;
+    }
+  });
+
+  const { story: estiloStory, style } = fromEstiloDefault(
+    typeof album.estilo_default === 'string' ? album.estilo_default : null,
+  );
+  const fotosPorPagina = resolveFotosPorPaginaValue(album.n_paginas);
+  const pageCount =
+    typeof album.paginas_total === 'number' && album.paginas_total > 0
+      ? album.paginas_total
+      : pagesForPhotoCount(photoUris.length);
+
+  clearCachedPdf(remoteId);
+
+  dispatch(
+    loadFromRemote({
+      title: album.nombre || 'Mi álbum',
+      photoCount: Math.max(photoUris.length, 1),
+      maxPhotos: resolvePackageCapacity(photoUris.length),
+      pageCount,
+      photos: photoUris,
+      style,
+      story: estiloStory || album.descripcion || '',
+      coverText: (album.descripcion ?? '').trim(),
+      fotosPorPagina,
+      remoteId,
+      remoteFotos,
+      pdfUrl: album.pdf
+        ? resolveMediaUrl(album.pdf)
+        : `preview:${remoteId}:${Date.now()}`,
     }),
   );
 }
