@@ -25,6 +25,8 @@ export function LoginScreen({ onSuccess, onBack, onRegister }: LoginScreenProps)
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const authHandledRef = useRef(false);
+  const onSuccessRef = useRef(onSuccess);
+  onSuccessRef.current = onSuccess;
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -33,8 +35,8 @@ export function LoginScreen({ onSuccess, onBack, onRegister }: LoginScreenProps)
     }
     if (authHandledRef.current) return;
     authHandledRef.current = true;
-    onSuccess();
-  }, [isAuthenticated, onSuccess]);
+    onSuccessRef.current();
+  }, [isAuthenticated]);
 
   const handleLogin = () => {
     dispatch(clearAuthError());

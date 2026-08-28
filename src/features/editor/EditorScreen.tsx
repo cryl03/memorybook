@@ -266,11 +266,16 @@ export function EditorScreen({
     setSelectedPhotoIndex(null);
   }, []);
 
+  const storedDesign = album.currentAlbum?.fotosPorPagina;
   const currentDesign: DisenoPagina =
-    album.currentAlbum?.fotosPorPagina ??
-    (currentPageData && !isCoverPage
-      ? disenoFromLayout(currentPageData.layout)
-      : 1);
+    storedDesign === 1 ||
+    storedDesign === 2 ||
+    storedDesign === 3 ||
+    storedDesign === 4
+      ? storedDesign
+      : currentPageData && !isCoverPage
+        ? disenoFromLayout(currentPageData.layout)
+        : 1;
 
   const handleSelectDesign = useCallback(
     (design: DisenoPagina) => {

@@ -1,5 +1,5 @@
 import { albumService, fotoService } from '@core/api';
-import { resolveFotosPorPagina, toEstiloDefault } from './estilo';
+import { pickStyleDesign, toEstiloDefault, toNPaginasDiseno } from './estilo';
 import type { AlbumEstilo, FotosPorPagina, UpdateAlbumPayload } from './types';
 
 export async function syncAlbumMetadata(
@@ -29,10 +29,7 @@ export async function syncAlbumMetadata(
   }
 
   if (extra?.fotosPorPagina != null) {
-    // API `n_paginas` = Diseño 1–4 (NOT page count)
-    payload.n_paginas = resolveFotosPorPagina({
-      fotosPorPagina: extra.fotosPorPagina,
-    });
+    payload.n_paginas = toNPaginasDiseno(extra.fotosPorPagina);
   }
 
   await albumService.patchAlbum(remoteId, payload);
@@ -102,12 +99,29 @@ export async function syncAlbumToCloud(options: {
 
   const previous = options.remoteFotos ?? {};
   const missing = options.photoUris.filter(uri => !previous[uri]);
+
+  let capacidad: FotosPorPagina | undefined = options.fotosPorPagina;
+  const estiloCode =
+    options.estiloDefault ??
+    (options.onboardingStory || options.style
+      ? toEstiloDefault(options.onboardingStory ?? '', options.style ?? 'sutil')
+      : undefined);
+  if (estiloCode) {
+    try {
+      const definition = await albumService.getStyleDefinitions(estiloCode);
+      const design = pickStyleDesign(definition, options.fotosPorPagina);
+      capacidad = design.capacity;
+    } catch (error) {
+      console.warn('[ESTILO] style-definitions failed', error);
+    }
+  }
+
   const remoteFotos = await uploadMissingPhotos(
     options.remoteId,
     options.photoUris,
     previous,
     options.onProgress,
-    options.fotosPorPagina,
+    capacidad,
   );
 
   let pdfUrl: string | undefined;

@@ -28,6 +28,8 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
   const [confirmPassword, setConfirmPassword] = useState('');
   const [validationError, setValidationError] = useState<string | null>(null);
   const authHandledRef = useRef(false);
+  const onSuccessRef = useRef(onSuccess);
+  onSuccessRef.current = onSuccess;
 
   useEffect(() => {
     if (!isAuthenticated) {
@@ -36,8 +38,8 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
     }
     if (authHandledRef.current) return;
     authHandledRef.current = true;
-    onSuccess();
-  }, [isAuthenticated, onSuccess]);
+    onSuccessRef.current();
+  }, [isAuthenticated]);
 
   const handleRegister = () => {
     setValidationError(null);
@@ -57,7 +59,7 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
       registerUser({
         username: username.trim(),
         password,
-        email: email.trim() || undefined,
+        email: (email.trim() || username.trim()) || undefined,
       }),
     );
   };

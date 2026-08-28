@@ -1,6 +1,12 @@
 import { albumService, fotoService } from '@core/api';
-import { resolveFotosPorPagina, toEstiloDefault, toStoryId, toToneId } from './estilo';
-import type { Album, AlbumEstilo, Foto, FotosPorPagina } from './types';
+import {
+  pickStyleDesign,
+  toEstiloDefault,
+  toNPaginasDiseno,
+  toStoryId,
+  toToneId,
+} from './estilo';
+import type { Album, AlbumEstilo, Foto, FotosPorPagina, StyleDefinition } from './types';
 
 export interface SyncAlbumOptions {
   title: string;
@@ -21,8 +27,18 @@ export interface SyncAlbumResult {
   pdfUrl?: string;
 }
 
-/** Prevent parallel creates (React Strict Mode / re-entrant effects) */
-let createAlbumLock: Promise<SyncAlbumResult> | null = null;
+/** One create per album. Survives CreatingScreen remount. Cleared on resetAlbum. */
+let activeCreate: Promise<SyncAlbumResult> | null = null;
+let lastCreate: SyncAlbumResult | null = null;
+
+export function resetSyncAlbumLock(): void {
+  activeCreate = null;
+  lastCreate = null;
+}
+
+export function getLastSyncAlbumResult(): SyncAlbumResult | null {
+  return lastCreate;
+}
 
 function sleep(ms: number): Promise<void> {
   return new Promise(resolve => setTimeout(resolve, ms));
@@ -60,25 +76,46 @@ export async function syncAlbumToApi({
   fotosPorPagina,
   onProgress,
 }: SyncAlbumOptions): Promise<SyncAlbumResult> {
-  if (createAlbumLock) {
-    return createAlbumLock;
+  if (lastCreate) {
+    return lastCreate;
+  }
+  if (activeCreate) {
+    return activeCreate;
   }
 
-  createAlbumLock = (async () => {
+  activeCreate = (async () => {
     onProgress?.('Creando álbum', 0.1);
 
     const estilo =
       estiloDefault ??
       (story || style ? toEstiloDefault(story ?? '', style ?? 'sutil') : undefined);
 
-    // API `n_paginas` = Diseño 1–4 (NOT page count)
-    const diseno = resolveFotosPorPagina({ fotosPorPagina });
+    let designCode = toNPaginasDiseno(fotosPorPagina);
+    let capacidad = 1;
+    let styleDef: StyleDefinition | null = null;
+
+    if (estilo) {
+      try {
+        styleDef = await albumService.getStyleDefinitions(estilo);
+        const design = pickStyleDesign(styleDef, fotosPorPagina);
+        designCode = design.code;
+        capacidad = design.capacity;
+        console.log('[ESTILO] style-definitions', {
+          code: styleDef.code,
+          design: design.code,
+          capacity: design.capacity,
+          orientation: styleDef.page_orientation,
+        });
+      } catch (error) {
+        console.warn('[ESTILO] style-definitions failed', error);
+      }
+    }
 
     const album = await albumService.createAlbum({
       nombre: title,
       descripcion: description ?? null,
       ...(estilo ? { estilo_default: estilo } : {}),
-      n_paginas: diseno,
+      n_paginas: designCode,
     });
 
     if (!album.unique_id) {
@@ -123,7 +160,11 @@ export async function syncAlbumToApi({
         const uploadProgress = 0.2 + (uploaded / total) * 0.65;
         onProgress?.(`Subiendo fotos (${uploaded}/${total})`, uploadProgress);
       },
-      { capacidadFotos: diseno },
+      {
+        capacidadFotos: capacidad,
+        descripcion: description ?? null,
+        texto: description ?? null,
+      },
     );
 
     let listed = fotos;
@@ -177,9 +218,15 @@ export async function syncAlbumToApi({
       remoteFotos,
       pdfUrl,
     };
-  })().finally(() => {
-    createAlbumLock = null;
-  });
+  })();
 
-  return createAlbumLock;
+  try {
+    lastCreate = await activeCreate;
+    return lastCreate;
+  } catch (error) {
+    lastCreate = null;
+    throw error;
+  } finally {
+    activeCreate = null;
+  }
 }

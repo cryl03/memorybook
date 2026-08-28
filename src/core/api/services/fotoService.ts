@@ -1,11 +1,12 @@
 import { apiRequest } from '../client';
 import { normalizeAlbumId } from '../albumId';
-import { toFotosPorPagina } from '../estilo';
+import { toCapacidadFotos } from '../estilo';
 import type { Foto, FotosPorPagina, UploadFotoPayload } from '../types';
 
 export type UploadFotosOptions = {
   descripcion?: string | null;
-  /** Diseño 1–4 (API field `capacidad_fotos`) */
+  texto?: string | null;
+  /** style-definitions.designs[].capacity */
   capacidadFotos?: FotosPorPagina | number | null;
 };
 
@@ -68,10 +69,13 @@ function buildAlbumFotosFormData(
   if (options?.descripcion) {
     formData.append('descripcion', options.descripcion);
   }
+  if (options?.texto) {
+    formData.append('texto', options.texto);
+  }
 
   formData.append(
     'capacidad_fotos',
-    String(toFotosPorPagina(options?.capacidadFotos)),
+    String(toCapacidadFotos(options?.capacidadFotos)),
   );
 
   return formData;
@@ -91,11 +95,14 @@ function buildFotoFormData(payload: UploadFotoPayload): FormData {
   if (payload.descripcion) {
     formData.append('descripcion', payload.descripcion);
   }
+  if (payload.texto) {
+    formData.append('texto', payload.texto);
+  }
 
   if (payload.capacidad_fotos != null) {
     formData.append(
       'capacidad_fotos',
-      String(toFotosPorPagina(payload.capacidad_fotos)),
+      String(toCapacidadFotos(payload.capacidad_fotos)),
     );
   }
 
@@ -162,6 +169,7 @@ export async function uploadFoto(payload: UploadFotoPayload): Promise<Foto> {
 export async function uploadAlbumFoto(payload: UploadFotoPayload): Promise<Foto> {
   const [foto] = await uploadAlbumFotos(payload.album_id, [payload.uri], {
     descripcion: payload.descripcion,
+    texto: payload.texto,
     capacidadFotos: payload.capacidad_fotos,
   });
   return foto;

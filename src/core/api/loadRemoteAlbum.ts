@@ -20,8 +20,8 @@ import type { Album, Foto } from './types';
 
 function resolveFotosPorPaginaValue(
   value: Album['n_paginas'],
-): 1 | 2 | 3 | 4 {
-  if (value === 1 || value === 2 || value === 3 || value === 4) return value;
+): number {
+  if (typeof value === 'number' && value >= 1 && value <= 4) return value;
   return 1;
 }
 

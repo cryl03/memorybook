@@ -70,3 +70,12 @@ export function getErrorMessage(error: unknown, fallback = 'Ocurrió un error'):
 
   return fallback;
 }
+
+/** 404 because sandbox UUID lookup missed the row (often undashed unique_id). */
+export function isAlbumMissingError(error: unknown): boolean {
+  if (!(error instanceof ApiError) || error.status !== 404) return false;
+  const message = getErrorMessage(error, '');
+  return /no album matches|álbum no encontrado|endpoint no encontrado|recurso no encontrado/i.test(
+    message,
+  );
+}

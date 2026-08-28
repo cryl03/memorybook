@@ -105,14 +105,15 @@ export function getMaxPhotosForLayout(layout: LayoutType): number {
 export function redistributePagesWithDesign(
   pages: PageData[],
   photoUris: string[],
-  fotosPorPagina: 1 | 2 | 3 | 4,
+  fotosPorPagina: number,
 ): PageData[] {
+  const slots = Math.max(1, Math.floor(fotosPorPagina) || 1);
   const pageLayout: LayoutType =
-    fotosPorPagina === 1
+    slots === 1
       ? 'single'
-      : fotosPorPagina === 2
+      : slots === 2
         ? 'grid-2'
-        : fotosPorPagina === 3
+        : slots === 3
           ? 'collage'
           : 'grid-4';
 
@@ -129,7 +130,7 @@ export function redistributePagesWithDesign(
   while (photoIndex < photoUris.length) {
     const pagePhotos: PagePhoto[] = [];
     while (
-      pagePhotos.length < fotosPorPagina &&
+      pagePhotos.length < slots &&
       photoIndex < photoUris.length
     ) {
       pagePhotos.push({

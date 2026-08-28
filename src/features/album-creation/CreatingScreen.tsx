@@ -6,7 +6,7 @@ import { botImage } from '@core/assets/images';
 import { useAppDispatch, useAppSelector } from '@core/store/hooks';
 import { setRemoteAlbumId, setSyncError, mergeRemoteFotos, setPdfUrl } from '@core/store/slices/albumSlice';
 import { store } from '@core/store';
-import { syncAlbumToApi } from '@core/api/syncAlbum';
+import { syncAlbumToApi, getLastSyncAlbumResult } from '@core/api/syncAlbum';
 import { getErrorMessage } from '@core/api/errors';
 import { ALLOW_GUEST_FLOW } from '@core/api';
 
@@ -96,7 +96,16 @@ export function CreatingScreen({ onComplete }: CreatingScreenProps) {
           sample: photoUris[0]?.slice(0, 96),
         });
 
-        if (!isAuthenticated && !ALLOW_GUEST_FLOW) {
+        const prior = getLastSyncAlbumResult();
+        if (prior?.album.unique_id && !alreadyRemote) {
+          dispatch(setRemoteAlbumId(prior.album.unique_id));
+          if (Object.keys(prior.remoteFotos).length > 0) {
+            dispatch(mergeRemoteFotos(prior.remoteFotos));
+          }
+          if (prior.pdfUrl) {
+            dispatch(setPdfUrl(prior.pdfUrl));
+          }
+        } else if (!isAuthenticated && !ALLOW_GUEST_FLOW) {
           dispatch(
             setSyncError('Inicia sesión para crear el álbum en la nube'),
           );
@@ -109,7 +118,7 @@ export function CreatingScreen({ onComplete }: CreatingScreenProps) {
           syncStartedRef.current = true;
           const result = await syncAlbumToApi({
             title: live?.title || snapshot?.title || 'Mi álbum',
-            description: live?.story ?? snapshot?.story,
+            description: live?.coverText ?? snapshot?.coverText ?? null,
             photoUris,
             story: live?.story ?? snapshot?.story,
             style: live?.style ?? snapshot?.style,

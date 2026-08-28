@@ -10,7 +10,6 @@ import {
   Dimensions,
   TouchableOpacity,
   Image,
-  ActivityIndicator,
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import Animated, {
@@ -113,18 +112,13 @@ export function OnboardingChatScreen({
   const [showTyping, setShowTyping] = useState(false);
   const [showStoryResponse, setShowStoryResponse] = useState(false);
   const [showStyleResponse, setShowStyleResponse] = useState(false);
-  const [loadingQuestions, setLoadingQuestions] = useState(isAuthenticated);
   const [questionsError, setQuestionsError] = useState<string | null>(null);
   const [storyQuestion, setStoryQuestion] = useState('');
-  const [toneQuestion, setToneQuestion] = useState(
-    isAuthenticated ? '' : '¿Qué estilo va más\ncontigo?',
-  );
+  const [toneQuestion, setToneQuestion] = useState('¿Qué estilo va más\ncontigo?');
   const [storyOptions, setStoryOptions] = useState<StyleSelectorOption[]>(
-    isAuthenticated ? [] : FALLBACK_STORY_OPTIONS,
+    FALLBACK_STORY_OPTIONS,
   );
-  const [toneOptions, setToneOptions] = useState<ToneOption[]>(
-    isAuthenticated ? [] : FALLBACK_TONE_OPTIONS,
-  );
+  const [toneOptions, setToneOptions] = useState<ToneOption[]>(FALLBACK_TONE_OPTIONS);
 
   const loadQuestions = useCallback(async () => {
     if (!isAuthenticated) {
@@ -132,11 +126,9 @@ export function OnboardingChatScreen({
       setToneOptions(FALLBACK_TONE_OPTIONS);
       setToneQuestion('¿Qué estilo va más\ncontigo?');
       setQuestionsError(null);
-      setLoadingQuestions(false);
       return;
     }
 
-    setLoadingQuestions(true);
     setQuestionsError(null);
 
     try {
@@ -151,15 +143,9 @@ export function OnboardingChatScreen({
       setToneQuestion(toneQ.question);
       setToneOptions(toneQ.options.map(withToneColor));
     } catch (error) {
-      setStoryQuestion('');
-      setToneQuestion('');
-      setStoryOptions([]);
-      setToneOptions([]);
       setQuestionsError(
         getErrorMessage(error, 'No se pudieron cargar las preguntas'),
       );
-    } finally {
-      setLoadingQuestions(false);
     }
   }, [isAuthenticated]);
 
@@ -283,9 +269,7 @@ export function OnboardingChatScreen({
       </View>
 
       <View style={styles.chatSection}>
-        {loadingQuestions && !story ? (
-          <ActivityIndicator color={colors.text.primary} />
-        ) : questionsError && !story ? (
+        {questionsError && !story && storyOptions.length === 0 ? (
           <View style={styles.errorBlock}>
             <Text style={styles.errorText}>{questionsError}</Text>
             <Button title="Reintentar" onPress={() => void loadQuestions()} />
@@ -342,11 +326,7 @@ export function OnboardingChatScreen({
         <Text style={styles.titleCenter}>{toneQuestion}</Text>
       </View>
 
-      {loadingQuestions && !selectedStyle ? (
-        <View style={styles.styleStatus}>
-          <ActivityIndicator color={colors.text.primary} />
-        </View>
-      ) : questionsError && !selectedStyle ? (
+      {questionsError && !selectedStyle && toneOptions.length === 0 ? (
         <View style={styles.errorBlock}>
           <Text style={styles.errorText}>{questionsError}</Text>
           <Button title="Reintentar" onPress={() => void loadQuestions()} />
@@ -425,8 +405,8 @@ export function OnboardingChatScreen({
       ) : null}
       <KeyboardAvoidingView
         style={styles.flex}
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
         <ScrollView
           contentContainerStyle={styles.scrollContent}
           keyboardShouldPersistTaps="handled"
@@ -553,9 +533,7 @@ const styles = StyleSheet.create({
 
   // Chat section
   chatSection: {
-    flex: 1,
     paddingHorizontal: spacing['3xl'],
-    justifyContent: 'flex-end',
     paddingBottom: spacing.xl,
   },
   errorBlock: {
@@ -566,11 +544,6 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.md,
     color: colors.text.secondary,
     textAlign: 'center',
-  },
-  styleStatus: {
-    flex: 1,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
 
   // Chips

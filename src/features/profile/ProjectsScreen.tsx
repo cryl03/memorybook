@@ -18,6 +18,7 @@ import { albumIdsEqual } from '@core/api/albumId';
 import { resolveMediaUrl } from '@core/api/pdfUrl';
 import { store } from '@core/store';
 import { resetAlbum } from '@core/store/slices/albumSlice';
+import { clearAlbumStorage } from '@features/editor/storage';
 import { useAppSelector } from '@core/store/hooks';
 import {
   getLocalAlbumSummary,
@@ -135,14 +136,19 @@ export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenPr
               setDeletingId(albumId);
               try {
                 await albumService.deleteAlbum(albumId);
-                setAlbums(current =>
-                  current.filter(item => !albumIdsEqual(item.unique_id, albumId)),
-                );
-                const currentRemote =
-                  store.getState().album.currentAlbum?.remoteId;
-                if (albumIdsEqual(currentRemote, albumId)) {
-                  store.dispatch(resetAlbum());
-                }
+                setAlbums(current => {
+                  const next = current.filter(
+                    item => !albumIdsEqual(item.unique_id, albumId),
+                  );
+                  const currentRemote =
+                    store.getState().album.currentAlbum?.remoteId;
+                  const deletedCurrent = albumIdsEqual(currentRemote, albumId);
+                  if (deletedCurrent || next.length === 0) {
+                    store.dispatch(resetAlbum());
+                    void clearAlbumStorage();
+                  }
+                  return next;
+                });
               } catch (err) {
                 Alert.alert(
                   'No se pudo eliminar',

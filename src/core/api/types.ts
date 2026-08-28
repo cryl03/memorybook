@@ -7,6 +7,17 @@ export interface RegisterPayload {
   username: string;
   password: string;
   email?: string;
+  first_name?: string;
+  last_name?: string;
+}
+
+export interface Usuario {
+  unique_id?: string;
+  username: string;
+  email?: string;
+  first_name?: string;
+  last_name?: string;
+  fecha_inscripcion?: string;
 }
 
 export interface AuthToken {
@@ -15,19 +26,27 @@ export interface AuthToken {
   token: string;
 }
 
-/** Backend `Estilo` TextChoices */
+/** Backend `Estilo` — `{story}_{tone}` from style-selector + style-definitions */
 export type AlbumEstilo =
   | 'viaje_sutil'
   | 'viaje_elegante'
   | 'viaje_espontaneo'
   | 'viaje_clasico'
+  | 'familia_sutil'
+  | 'familia_elegante'
+  | 'familia_espontaneo'
+  | 'familia_clasico'
   | 'cotidianos_sutil'
   | 'cotidianos_elegante'
   | 'cotidianos_espontaneo'
-  | 'cotidianos_clasico';
+  | 'cotidianos_clasico'
+  | 'special_sutil'
+  | 'special_elegante'
+  | 'special_espontaneo'
+  | 'special_clasico';
 
-/** Backend album `n_paginas` IntegerChoices — Diseño 1–4 (nombre engañoso) */
-export type FotosPorPagina = 1 | 2 | 3 | 4;
+/** Upload `capacidad_fotos` — from style-definitions.designs[].capacity (1–6) */
+export type FotosPorPagina = number;
 
 /** @deprecated alias — same as FotosPorPagina / API `n_paginas` design */
 export type DisenoAlbum = FotosPorPagina;
@@ -38,7 +57,8 @@ export interface Foto {
   album_id?: string;
   imagen?: string;
   descripcion?: string | null;
-  /** Diseño 1–4 on upload FormData (not always echoed in response) */
+  texto?: string | null;
+  /** Upload FormData `capacidad_fotos` — design.capacity */
   capacidad_fotos?: FotosPorPagina | number | null;
   asignada?: boolean;
   fecha_creacion?: string;
@@ -50,7 +70,7 @@ export interface Album {
   nombre: string;
   descripcion?: string | null;
   estilo_default?: AlbumEstilo | string | null;
-  /** Diseño 1–4 (API label "N paginas" — NOT page count) */
+  /** Design code from style-definitions (`default_design` / designs[].code) */
   n_paginas?: FotosPorPagina | number | null;
   portada_fondo?: string | null;
   paginas_total?: number | null;
@@ -101,7 +121,8 @@ export interface UploadFotoPayload {
   album_id: string;
   uri: string;
   descripcion?: string | null;
-  /** Diseño 1–4 → form field `capacidad_fotos` */
+  texto?: string | null;
+  /** Upload FormData `capacidad_fotos` = design.capacity, not n_paginas */
   capacidad_fotos?: FotosPorPagina | number | null;
   fileName?: string;
   mimeType?: string;
@@ -129,6 +150,23 @@ export interface SubmitStyleSelectorPayload {
   album_id: string;
   story_id: string;
   tone_id: string;
+}
+
+/** GET `/album/style-definitions/:code` */
+export interface StyleDesign {
+  code: number;
+  label: string;
+  capacity: number;
+}
+
+export interface StyleDefinition {
+  code: string;
+  label: string;
+  page_orientation?: 'horizontal' | 'vertical' | string;
+  color_mode?: string;
+  default_background?: string;
+  default_design: number;
+  designs: StyleDesign[];
 }
 
 export interface AlbumPdfResult {

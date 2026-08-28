@@ -54,8 +54,8 @@ export function ProfileScreen({
     }
 
     try {
-      const response = await albumService.listAlbums();
-      setAlbumCount(response.count);
+      const results = await albumService.listAllAlbums();
+      setAlbumCount(results.length);
     } catch {
       setAlbumCount(localAlbumCount);
     }

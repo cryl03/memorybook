@@ -33,11 +33,18 @@ export function WowScreen({
   const pdfRevision = album.currentAlbum?.pdfUrl;
   const [pdfPage, setPdfPage] = React.useState(1);
   const [pdfPageCount, setPdfPageCount] = React.useState(0);
-  const showPdf = Boolean(isAuthenticated && remoteId);
+  const [pdfFailed, setPdfFailed] = React.useState(false);
+  const showPdf = Boolean(isAuthenticated && remoteId && !pdfFailed);
+  const photoPageCount = photos.length;
+  const visiblePageCount = showPdf ? pdfPageCount : photoPageCount;
+  const coverUri = showPdf
+    ? coverPhoto
+    : photos[Math.max(0, pdfPage - 1)] || coverPhoto;
 
   React.useEffect(() => {
     setPdfPage(1);
     setPdfPageCount(0);
+    setPdfFailed(false);
   }, [remoteId]);
 
   const handleSave = async () => {
@@ -75,14 +82,18 @@ export function WowScreen({
                 onDocumentLoad={total => {
                   setPdfPageCount(total);
                 }}
+                onError={() => {
+                  setPdfFailed(true);
+                  setPdfPage(1);
+                }}
               />
             </View>
           ) : (
             <>
               <View style={styles.bookPhotoFrame}>
-                {coverPhoto ? (
+                {coverUri ? (
                   <Image
-                    source={{ uri: coverPhoto }}
+                    source={{ uri: coverUri }}
                     style={styles.bookPhoto}
                     resizeMode="cover"
                   />
@@ -102,8 +113,12 @@ export function WowScreen({
 
       <Text style={styles.albumTitle}>{albumTitle}</Text>
       <View style={styles.metaRow}>
-        {showPdf && pdfPageCount > 0 ? (
-          <Text style={styles.albumMeta}>{pdfPageCount} páginas</Text>
+        {visiblePageCount > 0 ? (
+          <Text style={styles.albumMeta}>
+            {showPdf
+              ? `${pdfPageCount} páginas`
+              : `${photoPageCount} foto${photoPageCount === 1 ? '' : 's'}`}
+          </Text>
         ) : (
           <View />
         )}
@@ -121,7 +136,7 @@ export function WowScreen({
       {/* Páginas del PDF del backend — no del editor local */}
       <View style={styles.pageNav}>
         <TouchableOpacity
-          disabled={!showPdf || pdfPage <= 1}
+          disabled={visiblePageCount <= 1 || pdfPage <= 1}
           onPress={() => setPdfPage(p => Math.max(1, p - 1))}
           style={styles.navArrow}
           accessibilityLabel="Página anterior">
@@ -131,7 +146,7 @@ export function WowScreen({
               width: 20,
               height: 20,
               tintColor:
-                showPdf && pdfPage > 1
+                visiblePageCount > 1 && pdfPage > 1
                   ? colors.text.primary
                   : colors.text.tertiary,
               transform: [{ rotate: '180deg' }],
@@ -140,15 +155,11 @@ export function WowScreen({
           />
         </TouchableOpacity>
         <Text style={styles.pageIndicator}>
-          {showPdf
-            ? pdfPageCount > 0
-              ? `${pdfPage} / ${pdfPageCount}`
-              : 'Álbum'
-            : 'Portada'}
+          {visiblePageCount > 0 ? `${pdfPage} / ${visiblePageCount}` : 'Portada'}
         </Text>
         <TouchableOpacity
-          disabled={!showPdf || pdfPageCount === 0 || pdfPage >= pdfPageCount}
-          onPress={() => setPdfPage(p => Math.min(pdfPageCount, p + 1))}
+          disabled={visiblePageCount === 0 || pdfPage >= visiblePageCount}
+          onPress={() => setPdfPage(p => Math.min(visiblePageCount, p + 1))}
           style={styles.navArrow}
           accessibilityLabel="Página siguiente"
           accessibilityRole="button">
@@ -158,7 +169,7 @@ export function WowScreen({
               width: 20,
               height: 20,
               tintColor:
-                showPdf && pdfPageCount > 0 && pdfPage < pdfPageCount
+                visiblePageCount > 0 && pdfPage < visiblePageCount
                   ? colors.text.primary
                   : colors.text.tertiary,
             }}

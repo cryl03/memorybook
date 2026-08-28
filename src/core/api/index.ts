@@ -3,7 +3,7 @@ import { authService } from './services/authService';
 import { fotoService } from './services/fotoService';
 
 export { API_BASE_URL, API_UPLOADS_BASE_URL, ALLOW_GUEST_FLOW } from './config';
-export { ApiError, getErrorMessage } from './errors';
+export { ApiError, getErrorMessage, isAlbumMissingError } from './errors';
 export { apiRequest, apiRequestPdf, setTokenGetter, getAuthToken } from './client';
 export * from './types';
 export {
@@ -15,6 +15,7 @@ export {
   toCapacidadFotos,
   toNPaginasDiseno,
   resolveFotosPorPagina,
+  pickStyleDesign,
 } from './estilo';
 export { normalizeAlbumId, albumIdsEqual } from './albumId';
 
@@ -25,7 +26,7 @@ export const memoraApi = {
 };
 
 export { albumService, authService, fotoService };
-export { syncAlbumToApi } from './syncAlbum';
+export { syncAlbumToApi, resetSyncAlbumLock } from './syncAlbum';
 export { loadRemoteAlbumForEditor, openRemoteAlbumForPreview } from './loadRemoteAlbum';
 export {
   syncAlbumMetadata,

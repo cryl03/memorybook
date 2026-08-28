@@ -1,6 +1,7 @@
-import type { AlbumEstilo, FotosPorPagina } from './types';
+import type { AlbumEstilo, FotosPorPagina, StyleDefinition, StyleDesign } from './types';
 
 const STYLE_IDS = new Set(['sutil', 'elegante', 'espontaneo', 'clasico']);
+const STORY_IDS = new Set(['viaje', 'familia', 'cotidianos', 'special']);
 
 const STORY_ID_MAP: Record<string, string> = {
   viaje: 'viaje',
@@ -9,7 +10,7 @@ const STORY_ID_MAP: Record<string, string> = {
   special: 'special',
 };
 
-/** Local story label/id → API `story_id`. Unknown (Pareja, Amigos, Mascota) → `special`. */
+/** Local story label/id → API `story_id`. Unknown → `special`. */
 export function toStoryId(story: string): string {
   const normalized = story.trim().toLowerCase();
   return STORY_ID_MAP[normalized] ?? 'special';
@@ -22,12 +23,12 @@ export function toToneId(style: string): string {
 }
 
 /**
- * Maps onboarding story + style → API `estilo_default`.
- * Viaje → viaje_*; anything else → cotidianos_*.
+ * Maps onboarding story + tone → API `estilo_default` (`{story}_{tone}`).
+ * Codes exist for viaje, familia, cotidianos, special.
  */
 export function toEstiloDefault(story: string, style: string): AlbumEstilo {
-  const tema = story.trim().toLowerCase() === 'viaje' ? 'viaje' : 'cotidianos';
-  const estilo = STYLE_IDS.has(style) ? style : 'sutil';
+  const tema = STORY_IDS.has(toStoryId(story)) ? toStoryId(story) : 'special';
+  const estilo = toToneId(style);
   return `${tema}_${estilo}` as AlbumEstilo;
 }
 
@@ -38,46 +39,61 @@ export function fromEstiloDefault(estilo?: string | null): {
 } {
   if (!estilo) return { story: '', style: '' };
 
-  const match = /^(viaje|cotidianos)_(sutil|elegante|espontaneo|clasico)$/.exec(
-    estilo,
-  );
+  const match =
+    /^(viaje|familia|cotidianos|special)_(sutil|elegante|espontaneo|clasico)$/.exec(
+      estilo,
+    );
   if (!match) return { story: '', style: '' };
 
   return {
-    story: match[1] === 'viaje' ? 'Viaje' : 'Familia',
+    story: match[1],
     style: match[2],
   };
 }
 
-/**
- * Layout / diseño → 1–4.
- * Album field: `n_paginas` (API mislabels as "N paginas").
- * Upload field: `capacidad_fotos`.
- */
-export function toFotosPorPagina(design?: number | null): FotosPorPagina {
+/** Album JSON `n_paginas` = design code (1–4). */
+export function toNPaginasDiseno(design?: number | null): number {
   if (design === 1 || design === 2 || design === 3 || design === 4) {
     return design;
   }
   return 1;
 }
 
-/** Alias — upload FormData key is `capacidad_fotos`. */
-export function toCapacidadFotos(design?: number | null): FotosPorPagina {
-  return toFotosPorPagina(design);
+/** Upload FormData `capacidad_fotos` = designs[].capacity (1–6+). */
+export function toCapacidadFotos(capacity?: number | null): FotosPorPagina {
+  if (typeof capacity === 'number' && Number.isFinite(capacity) && capacity >= 1) {
+    return Math.min(Math.floor(capacity), 12);
+  }
+  return 1;
 }
 
-/** Alias — album JSON key is `n_paginas` but means Diseño. */
-export function toNPaginasDiseno(design?: number | null): FotosPorPagina {
-  return toFotosPorPagina(design);
+/** @deprecated use toCapacidadFotos for upload, toNPaginasDiseno for album. */
+export function toFotosPorPagina(design?: number | null): FotosPorPagina {
+  return toCapacidadFotos(design);
 }
 
-/** Prefer explicit diseño; else derive from photos-per-page preference. */
+export function pickStyleDesign(
+  definition: StyleDefinition,
+  designCode?: number | null,
+): StyleDesign {
+  const wanted = designCode ?? definition.default_design;
+  return (
+    definition.designs.find(design => design.code === wanted) ??
+    definition.designs[0] ?? {
+      code: definition.default_design || 1,
+      label: 'Default',
+      capacity: 1,
+    }
+  );
+}
+
+/** Prefer explicit design code; else 1. */
 export function resolveFotosPorPagina(options?: {
   fotosPorPagina?: number | null;
   layoutPhotoCount?: number | null;
 }): FotosPorPagina {
   if (options?.fotosPorPagina != null) {
-    return toFotosPorPagina(options.fotosPorPagina);
+    return toNPaginasDiseno(options.fotosPorPagina);
   }
-  return toFotosPorPagina(options?.layoutPhotoCount ?? 1);
+  return toNPaginasDiseno(options?.layoutPhotoCount ?? 1);
 }

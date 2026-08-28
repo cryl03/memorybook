@@ -116,8 +116,16 @@ export async function hasSavedAlbum(): Promise<boolean> {
 
 export async function clearAlbumStorage(): Promise<void> {
   try {
-    // Keep per-album cover text keys so reopen from cloud can restore them
-    await AsyncStorage.multiRemove([ALBUM_PAGES_KEY, ALBUM_TITLE_KEY]);
+    const keys = await AsyncStorage.getAllKeys();
+    const albumKeys = keys.filter(
+      key =>
+        key === ALBUM_PAGES_KEY ||
+        key === ALBUM_TITLE_KEY ||
+        key.startsWith(COVER_TEXT_PREFIX),
+    );
+    if (albumKeys.length > 0) {
+      await AsyncStorage.multiRemove(albumKeys);
+    }
   } catch (error) {
     console.warn('Error clearing album storage:', error);
   }

@@ -34,6 +34,7 @@ interface AlbumPdfPreviewProps {
   /** Change this after a new backend PDF so the viewer reloads. */
   revision?: string;
   onDocumentLoad?: (pageCount: number) => void;
+  onError?: (message: string) => void;
 }
 
 function viewerHtml(): string {
@@ -128,10 +129,13 @@ export function AlbumPdfPreview({
   page,
   revision,
   onDocumentLoad,
+  onError,
 }: AlbumPdfPreviewProps) {
   const webRef = useRef<{ injectJavaScript?: (js: string) => void } | null>(
     null,
   );
+  const onErrorRef = useRef(onError);
+  onErrorRef.current = onError;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [ready, setReady] = useState(false);
@@ -175,7 +179,9 @@ export function AlbumPdfPreview({
       if (gen !== loadGen.current) return;
       console.warn('[PDF] preview failed', getErrorMessage(err, String(err)), err);
       setLoading(false);
-      setError(getErrorMessage(err, 'No se pudo cargar el álbum'));
+      const message = getErrorMessage(err, 'No se pudo cargar el álbum');
+      setError(message);
+      onErrorRef.current?.(message);
     }
   }, [albumId, injectPdf]);
 

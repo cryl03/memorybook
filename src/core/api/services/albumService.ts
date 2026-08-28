@@ -16,6 +16,7 @@ import type {
   PaginatedResponse,
   StyleSelectorResponse,
   SubmitStyleSelectorPayload,
+  StyleDefinition,
   UpdateAlbumPayload,
 } from '../types';
 
@@ -125,13 +126,9 @@ export async function patchAlbum(
 }
 
 export async function deleteAlbum(id: string): Promise<void> {
+  // Django `<uuid:>` only matches 8-4-4-4-12. Undashed hex → HTML 404.
   const dashed = albumPathId(id);
-  const undashed = id.replace(/-/g, '');
-  const ids = [...new Set([dashed, undashed, id].filter(Boolean))];
-  const paths = ids.flatMap(albumId => [
-    `/album/delete/${albumId}`,
-    `/album/delete/${albumId}/`,
-  ]);
+  const paths = [`/album/delete/${dashed}`, `/album/delete/${dashed}/`];
 
   let lastError: unknown;
   for (const path of paths) {
@@ -340,6 +337,15 @@ export async function submitStyleSelector(
   });
 }
 
+/** GET `/album/style-definitions/:code` e.g. viaje_sutil */
+export async function getStyleDefinitions(
+  code: string,
+): Promise<StyleDefinition> {
+  return apiRequest<StyleDefinition>(
+    `/album/style-definitions/${encodeURIComponent(code)}`,
+  );
+}
+
 export const albumService = {
   listAlbums,
   listAllAlbums,
@@ -355,4 +361,5 @@ export const albumService = {
   fetchAlbumPdfBytes,
   getStyleSelector,
   submitStyleSelector,
+  getStyleDefinitions,
 };

@@ -12,8 +12,8 @@ export interface AlbumState {
     story: string;
     /** Texto de portada — se sincroniza como `descripcion` del álbum en la API */
     coverText?: string;
-    /** API `n_paginas` — Diseño 1–4 (NOT page count) */
-    fotosPorPagina?: 1 | 2 | 3 | 4;
+    /** API `n_paginas` — design code from style-definitions */
+    fotosPorPagina?: number;
     remoteId?: string;
     remoteFotos?: Record<string, string>;
     /** URL of generated album PDF (`POST /album/:id/pdf/`) */
@@ -111,7 +111,7 @@ const albumSlice = createSlice({
         state.currentAlbum.story = action.payload;
       }
     },
-    setFotosPorPagina(state, action: PayloadAction<1 | 2 | 3 | 4>) {
+    setFotosPorPagina(state, action: PayloadAction<number>) {
       if (state.currentAlbum) {
         state.currentAlbum.fotosPorPagina = action.payload;
       }
@@ -167,7 +167,7 @@ const albumSlice = createSlice({
         style: string;
         story: string;
         coverText?: string;
-        fotosPorPagina?: 1 | 2 | 3 | 4;
+        fotosPorPagina?: number;
         remoteId: string;
         remoteFotos?: Record<string, string>;
         pdfUrl?: string;

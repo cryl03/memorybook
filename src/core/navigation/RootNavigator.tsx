@@ -12,21 +12,18 @@ import {
   appendPhotos,
   startCreation,
   finishCreation,
-  hydrateAlbum,
   repairAlbum,
   resetAlbum,
   ensurePhotoCapacity,
 } from '@core/store/slices/albumSlice';
 import { resolveAlbumMaxPhotos } from '@core/store/albumUtils';
-import { loadSession } from '@core/storage/sessionStorage';
-import { hasSavedAlbum, syncPagesWithPhotos } from '@features/editor/storage';
+import { loadSession, saveSession, clearSession } from '@core/storage/sessionStorage';
+import { syncPagesWithPhotos, clearAlbumStorage } from '@features/editor/storage';
 import { openRemoteAlbumForPreview, saveAlbumToCloud, albumNeedsCloudSync, syncLocalAlbumOnAuth, ALLOW_GUEST_FLOW } from '@core/api';
 import { getErrorMessage } from '@core/api/errors';
 import { isLocalAlbumId } from '@core/storage/localAlbum';
-import { clearSession } from '@core/storage/sessionStorage';
 import { logout } from '@core/store/slices/authSlice';
 import { resetUser } from '@core/store/slices/userSlice';
-import { clearAlbumStorage } from '@features/editor/storage';
 
 import { SplashScreen } from '@features/splash/SplashScreen';
 import { PresentationScreen } from '@features/onboarding/PresentationScreen';
@@ -46,9 +43,24 @@ import { ProfileNavigator } from './ProfileNavigator';
 import { AlbumSyncOverlay } from '@shared/components';
 
 import type { RootStackParamList } from './types';
-import type { NativeStackNavigationProp } from '@react-navigation/native-stack';
+import type {
+  NativeStackNavigationProp,
+  NativeStackScreenProps,
+} from '@react-navigation/native-stack';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
+
+function CreatingRoute({
+  navigation,
+}: NativeStackScreenProps<RootStackParamList, 'Creating'>) {
+  const dispatch = useAppDispatch();
+  const handleComplete = useCallback(() => {
+    dispatch(finishCreation());
+    dispatch(repairAlbum());
+    navigation.navigate('Wow');
+  }, [dispatch, navigation]);
+  return <CreatingScreen onComplete={handleComplete} />;
+}
 
 function hasAuthSession(
   session: Awaited<ReturnType<typeof loadSession>>,
@@ -56,20 +68,17 @@ function hasAuthSession(
   return Boolean(session?.auth?.token && session.auth.isAuthenticated);
 }
 
-async function resolveInitialRoute(): Promise<keyof RootStackParamList> {
-  const [session, savedAlbum] = await Promise.all([loadSession(), hasSavedAlbum()]);
+async function resolveInitialRoute(
+  session: Awaited<ReturnType<typeof loadSession>>,
+): Promise<keyof RootStackParamList> {
   const signedIn = hasAuthSession(session);
 
   if (!ALLOW_GUEST_FLOW && !signedIn) {
     return 'Presentation';
   }
 
-  // Prefer Wow (generated album) over Editor — saved pages always exist after create
-  if (session?.album.currentAlbum) {
-    return session.album.isCreating ? 'Creating' : 'Wow';
-  }
-  if (savedAlbum) return 'Editor';
-  if (session?.user.isOnboarded) return 'MainTabs';
+  // Never restore local Editor/Wow. Cloud albums open from Mis álbumes.
+  if (signedIn || session?.user.isOnboarded) return 'MainTabs';
   return 'Presentation';
 }
 
@@ -278,14 +287,20 @@ export function RootNavigator() {
       const session = await loadSession();
       if (session) {
         dispatch(hydrateUser(session.user));
-        dispatch(hydrateAlbum(session.album));
         if (session.auth) {
           dispatch(hydrateAuth(session.auth));
         }
-        dispatch(repairAlbum());
       }
 
-      const route = await resolveInitialRoute();
+      dispatch(resetAlbum());
+      await clearAlbumStorage();
+      const { user, album, auth } = store.getState();
+      await saveSession({ user, album, auth });
+      if (session) {
+        session.album = { currentAlbum: null, isCreating: false, syncError: null };
+      }
+
+      const route = await resolveInitialRoute(session);
       if (!cancelled) {
         setInitialRoute(route);
         setIsReady(true);
@@ -428,17 +443,7 @@ export function RootNavigator() {
           )}
         </Stack.Screen>
 
-        <Stack.Screen name="Creating">
-          {({ navigation }) => (
-            <CreatingScreen
-              onComplete={() => {
-                dispatch(finishCreation());
-                dispatch(repairAlbum());
-                navigation.navigate('Wow');
-              }}
-            />
-          )}
-        </Stack.Screen>
+        <Stack.Screen name="Creating" component={CreatingRoute} />
 
         <Stack.Screen name="Wow">
           {({ navigation }) => (
