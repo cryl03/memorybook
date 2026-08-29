@@ -10,4 +10,5 @@ export { OpenBookSpread, ClosedBookCover } from './OpenBookSpread';
 export { PhotoActionSheet } from './PhotoActionSheet';
 export { ReplacePhotoPicker } from './ReplacePhotoPicker';
 export { BookPageCurl } from './BookPageCurl';
+export type { BookPageCurlHandle } from './BookPageCurl';
 export { PageTurnGesture } from './PageTurnGesture';

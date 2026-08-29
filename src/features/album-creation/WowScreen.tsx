@@ -4,7 +4,10 @@ import LinearGradient from 'react-native-linear-gradient';
 import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { useAppSelector } from '@core/store/hooks';
-import { AlbumPdfPreview } from './AlbumPdfPreview';
+import {
+  AlbumPdfFlipbook,
+  type AlbumPdfFlipbookHandle,
+} from './AlbumPdfFlipbook';
 
 const { width } = Dimensions.get('window');
 
@@ -34,6 +37,7 @@ export function WowScreen({
   const [pdfPage, setPdfPage] = React.useState(1);
   const [pdfPageCount, setPdfPageCount] = React.useState(0);
   const [pdfFailed, setPdfFailed] = React.useState(false);
+  const flipRef = React.useRef<AlbumPdfFlipbookHandle>(null);
   const showPdf = Boolean(isAuthenticated && remoteId && !pdfFailed);
   const photoPageCount = photos.length;
   const visiblePageCount = showPdf ? pdfPageCount : photoPageCount;
@@ -75,13 +79,20 @@ export function WowScreen({
         <View style={[styles.bookCover, showPdf ? styles.bookCoverPdf : null]}>
           {showPdf && remoteId ? (
             <View style={styles.pdfSlot}>
-              <AlbumPdfPreview
+              <AlbumPdfFlipbook
+                ref={flipRef}
                 albumId={remoteId}
                 page={pdfPage}
                 revision={pdfRevision}
                 onDocumentLoad={total => {
                   setPdfPageCount(total);
                 }}
+                onNext={() =>
+                  setPdfPage(p =>
+                    pdfPageCount > 0 ? Math.min(p + 1, pdfPageCount) : p + 1,
+                  )
+                }
+                onPrev={() => setPdfPage(p => Math.max(1, p - 1))}
                 onError={() => {
                   setPdfFailed(true);
                   setPdfPage(1);
@@ -137,7 +148,10 @@ export function WowScreen({
       <View style={styles.pageNav}>
         <TouchableOpacity
           disabled={visiblePageCount <= 1 || pdfPage <= 1}
-          onPress={() => setPdfPage(p => Math.max(1, p - 1))}
+          onPress={() => {
+            if (showPdf) flipRef.current?.goPrev();
+            else setPdfPage(p => Math.max(1, p - 1));
+          }}
           style={styles.navArrow}
           accessibilityLabel="Página anterior">
           <Image
@@ -159,7 +173,10 @@ export function WowScreen({
         </Text>
         <TouchableOpacity
           disabled={visiblePageCount === 0 || pdfPage >= visiblePageCount}
-          onPress={() => setPdfPage(p => Math.min(visiblePageCount, p + 1))}
+          onPress={() => {
+            if (showPdf) flipRef.current?.goNext();
+            else setPdfPage(p => Math.min(visiblePageCount, p + 1));
+          }}
           style={styles.navArrow}
           accessibilityLabel="Página siguiente"
           accessibilityRole="button">

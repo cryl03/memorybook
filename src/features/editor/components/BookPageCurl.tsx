@@ -1,9 +1,20 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import React, {
+  forwardRef,
+  useCallback,
+  useEffect,
+  useImperativeHandle,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   View,
+  Image,
   StyleSheet,
   LayoutChangeEvent,
   InteractionManager,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native';
 import {
   Canvas,
@@ -27,291 +38,462 @@ import { PAGE_CURL_SHADER } from './pageCurlShader';
 /** Match editor gradient so curl never flashes Skia’s default black */
 const CURL_BG = '#F5F8FA';
 
+export type BookPageCurlHandle = {
+  goNext: () => void;
+  goPrev: () => void;
+};
+
 interface BookPageCurlProps {
   currentPage: number;
   pageCount: number;
   onPrev: () => void;
   onNext: () => void;
-  renderPage: (pageIndex: number) => React.ReactNode;
+  renderPage?: (pageIndex: number) => React.ReactNode;
+  /** Data URLs (jpeg/png). Skips view snapshots — safe with FLAG_SECURE. */
+  pageImages?: (string | null)[];
+  backgroundColor?: string;
+  style?: StyleProp<ViewStyle>;
 }
 
 type SnapTarget = 'current' | 'next' | 'prev';
 
-export function BookPageCurl({
-  currentPage,
-  pageCount,
-  onPrev,
-  onNext,
-  renderPage,
-}: BookPageCurlProps) {
-  const [size, setSize] = useState({ width: 0, height: 0 });
-  const [isCurling, setIsCurling] = useState(false);
+function decodeDataUrl(dataUrl: string): SkImage | null {
+  try {
+    const b64 = dataUrl.includes(',') ? dataUrl.split(',')[1] : dataUrl;
+    if (!b64) return null;
+    const data = Skia.Data.fromBase64(b64);
+    return Skia.Image.MakeImageFromEncoded(data);
+  } catch {
+    return null;
+  }
+}
 
-  const currentRef = useRef<View>(null);
-  const nextRef = useRef<View>(null);
-  const prevRef = useRef<View>(null);
+export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
+  function BookPageCurl(
+    {
+      currentPage,
+      pageCount,
+      onPrev,
+      onNext,
+      renderPage,
+      pageImages,
+      backgroundColor = CURL_BG,
+      style,
+    },
+    ref,
+  ) {
+    const imageMode = Boolean(pageImages);
+    const [size, setSize] = useState({ width: 0, height: 0 });
+    const [isCurling, setIsCurling] = useState(false);
 
-  const currentImage = useSharedValue<SkImage | null>(null);
-  const nextImage = useSharedValue<SkImage | null>(null);
-  const prevImage = useSharedValue<SkImage | null>(null);
+    const currentRef = useRef<View>(null);
+    const nextRef = useRef<View>(null);
+    const prevRef = useRef<View>(null);
+    const skCache = useRef<Map<string, SkImage>>(new Map());
 
-  const progress = useSharedValue(0);
-  const topFlag = useSharedValue(1);
-  /** 0 = next (peel leftward), 1 = prev (peel rightward) */
-  const mirrorX = useSharedValue(0);
-  const animDir = useSharedValue<'next' | 'prev'>('next');
-  const dirLocked = useSharedValue(false);
-  const pageIndex = useSharedValue(currentPage);
-  const lastPageIndex = useSharedValue(Math.max(pageCount - 1, 0));
-  const isAnimating = useSharedValue(false);
+    const currentImage = useSharedValue<SkImage | null>(null);
+    const nextImage = useSharedValue<SkImage | null>(null);
+    const prevImage = useSharedValue<SkImage | null>(null);
 
-  const effect = useMemo(() => Skia.RuntimeEffect.Make(PAGE_CURL_SHADER)!, []);
+    const progress = useSharedValue(0);
+    const topFlag = useSharedValue(1);
+    /** 0 = next (peel leftward), 1 = prev (peel rightward) */
+    const mirrorX = useSharedValue(0);
+    const animDir = useSharedValue<'next' | 'prev'>('next');
+    const dirLocked = useSharedValue(false);
+    const pageIndex = useSharedValue(currentPage);
+    const lastPageIndex = useSharedValue(Math.max(pageCount - 1, 0));
+    const isAnimating = useSharedValue(false);
+    const canNextSv = useSharedValue(false);
+    const canPrevSv = useSharedValue(false);
 
-  useEffect(() => {
-    pageIndex.value = currentPage;
-    lastPageIndex.value = Math.max(pageCount - 1, 0);
-  }, [currentPage, lastPageIndex, pageCount, pageIndex]);
+    const effect = useMemo(() => Skia.RuntimeEffect.Make(PAGE_CURL_SHADER)!, []);
 
-  const capture = useCallback(async (target: SnapTarget) => {
-    const ref =
-      target === 'current' ? currentRef : target === 'next' ? nextRef : prevRef;
-    if (!ref.current || size.width <= 0) return null;
+    const getSk = useCallback((dataUrl: string | null | undefined) => {
+      if (!dataUrl) return null;
+      const cached = skCache.current.get(dataUrl);
+      if (cached) return cached;
+      const img = decodeDataUrl(dataUrl);
+      if (img) skCache.current.set(dataUrl, img);
+      return img;
+    }, []);
 
-    await new Promise<void>(resolve => {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => resolve());
-      });
-    });
+    useEffect(() => {
+      pageIndex.value = currentPage;
+      lastPageIndex.value = Math.max(pageCount - 1, 0);
+    }, [currentPage, lastPageIndex, pageCount, pageIndex]);
 
-    await new Promise<void>(resolve => {
-      InteractionManager.runAfterInteractions(() => resolve());
-    });
+    useEffect(() => {
+      const hasNext =
+        currentPage < pageCount - 1 &&
+        (!pageImages || Boolean(pageImages[currentPage + 1]));
+      const hasPrev =
+        currentPage > 0 && (!pageImages || Boolean(pageImages[currentPage - 1]));
+      canNextSv.value = hasNext;
+      canPrevSv.value = hasPrev;
+    }, [canNextSv, canPrevSv, currentPage, pageCount, pageImages]);
 
-    try {
-      return await makeImageFromView(ref);
-    } catch (error) {
-      console.warn('Page curl snapshot failed:', error);
-      return null;
-    }
-  }, [size.width]);
-
-  const refreshSnapshots = useCallback(async () => {
-    const [cur, nxt, prv] = await Promise.all([
-      capture('current'),
-      currentPage < pageCount - 1 ? capture('next') : Promise.resolve(null),
-      currentPage > 0 ? capture('prev') : Promise.resolve(null),
+    useEffect(() => {
+      if (!pageImages) return;
+      const keep = new Set(pageImages.filter((uri): uri is string => Boolean(uri)));
+      for (const key of [...skCache.current.keys()]) {
+        if (!keep.has(key)) skCache.current.delete(key);
+      }
+      currentImage.value = getSk(pageImages[currentPage]);
+      nextImage.value =
+        currentPage < pageCount - 1 ? getSk(pageImages[currentPage + 1]) : null;
+      prevImage.value =
+        currentPage > 0 ? getSk(pageImages[currentPage - 1]) : null;
+    }, [
+      currentImage,
+      currentPage,
+      getSk,
+      nextImage,
+      pageCount,
+      pageImages,
+      prevImage,
     ]);
 
-    if (cur) currentImage.value = cur;
-    if (nxt) nextImage.value = nxt;
-    if (prv) prevImage.value = prv;
-  }, [
-    capture,
-    currentImage,
-    currentPage,
-    nextImage,
-    pageCount,
-    prevImage,
-  ]);
+    const capture = useCallback(
+      async (target: SnapTarget) => {
+        const snapRef =
+          target === 'current'
+            ? currentRef
+            : target === 'next'
+              ? nextRef
+              : prevRef;
+        if (!snapRef.current || size.width <= 0) return null;
 
-  useEffect(() => {
-    if (size.width <= 0) return;
-    const timer = setTimeout(() => {
-      void refreshSnapshots();
-    }, 80);
-    return () => clearTimeout(timer);
-  }, [currentPage, refreshSnapshots, size]);
+        await new Promise<void>(resolve => {
+          requestAnimationFrame(() => {
+            requestAnimationFrame(() => resolve());
+          });
+        });
 
-  const finishCurl = useCallback(
-    (direction: 'next' | 'prev') => {
-      progress.value = 0;
-      isAnimating.value = false;
-      setIsCurling(false);
-      if (direction === 'next') onNext();
-      else onPrev();
-    },
-    [isAnimating, onNext, onPrev, progress],
-  );
+        await new Promise<void>(resolve => {
+          InteractionManager.runAfterInteractions(() => resolve());
+        });
 
-  const startCurlOverlay = useCallback(() => {
-    setIsCurling(true);
-  }, []);
-
-  const pan = Gesture.Pan()
-    .activeOffsetX([-22, 22])
-    .failOffsetY([-16, 16])
-    .onBegin(event => {
-      topFlag.value = event.y < size.height / 2 ? 0 : 1;
-      dirLocked.value = false;
-      progress.value = 0;
-    })
-    .onUpdate(event => {
-      if (isAnimating.value) return;
-
-      const canGoPrev = pageIndex.value > 0;
-      const canGoNext = pageIndex.value < lastPageIndex.value;
-      const x = event.translationX;
-      const absX = Math.abs(x);
-
-      if (!dirLocked.value && absX > 10) {
-        const wantsNext = x < 0;
-        if ((wantsNext && !canGoNext) || (!wantsNext && !canGoPrev)) {
-          progress.value = Math.min(absX / size.width, 0.12);
-          return;
+        try {
+          return await makeImageFromView(snapRef);
+        } catch (error) {
+          console.warn('Page curl snapshot failed:', error);
+          return null;
         }
-        animDir.value = wantsNext ? 'next' : 'prev';
-        mirrorX.value = wantsNext ? 0 : 1;
+      },
+      [size.width],
+    );
+
+    const refreshSnapshots = useCallback(async () => {
+      const [cur, nxt, prv] = await Promise.all([
+        capture('current'),
+        currentPage < pageCount - 1 ? capture('next') : Promise.resolve(null),
+        currentPage > 0 ? capture('prev') : Promise.resolve(null),
+      ]);
+
+      if (cur) currentImage.value = cur;
+      if (nxt) nextImage.value = nxt;
+      if (prv) prevImage.value = prv;
+    }, [
+      capture,
+      currentImage,
+      currentPage,
+      nextImage,
+      pageCount,
+      prevImage,
+    ]);
+
+    useEffect(() => {
+      if (imageMode) return;
+      if (size.width <= 0) return;
+      const timer = setTimeout(() => {
+        void refreshSnapshots();
+      }, 80);
+      return () => clearTimeout(timer);
+    }, [currentPage, imageMode, refreshSnapshots, size]);
+
+    const finishCurl = useCallback(
+      (direction: 'next' | 'prev') => {
+        progress.value = 0;
+        isAnimating.value = false;
+        setIsCurling(false);
+        if (direction === 'next') onNext();
+        else onPrev();
+      },
+      [isAnimating, onNext, onPrev, progress],
+    );
+
+    const startCurlOverlay = useCallback(() => {
+      setIsCurling(true);
+    }, []);
+
+    const playCurl = useCallback(
+      (direction: 'next' | 'prev') => {
+        if (isAnimating.value) return;
+        const can =
+          direction === 'next' ? canNextSv.value : canPrevSv.value;
+        if (!can) return;
+
+        animDir.value = direction;
+        mirrorX.value = direction === 'next' ? 0 : 1;
         dirLocked.value = true;
-        runOnJS(startCurlOverlay)();
-      }
-
-      if (!dirLocked.value) return;
-
-      if (animDir.value === 'next') {
-        progress.value = Math.min(Math.max(-x, 0) / size.width, 1);
-      } else {
-        progress.value = Math.min(Math.max(x, 0) / size.width, 1);
-      }
-    })
-    .onEnd(event => {
-      if (isAnimating.value) return;
-
-      const canGoPrev = pageIndex.value > 0;
-      const canGoNext = pageIndex.value < lastPageIndex.value;
-      const shouldCommit =
-        progress.value > 0.28 ||
-        (animDir.value === 'next' && event.velocityX < -850) ||
-        (animDir.value === 'prev' && event.velocityX > 850);
-
-      const goingNext = animDir.value === 'next' && canGoNext;
-      const goingPrev = animDir.value === 'prev' && canGoPrev;
-
-      if (dirLocked.value && shouldCommit && (goingNext || goingPrev)) {
+        setIsCurling(true);
         isAnimating.value = true;
-        const direction = animDir.value;
         progress.value = withTiming(1, { duration: 420 }, finished => {
           if (finished) {
             dirLocked.value = false;
             runOnJS(finishCurl)(direction);
           }
         });
-        return;
-      }
+      },
+      [
+        animDir,
+        canNextSv,
+        canPrevSv,
+        dirLocked,
+        finishCurl,
+        isAnimating,
+        mirrorX,
+        progress,
+      ],
+    );
 
-      progress.value = withSpring(0, { damping: 18, stiffness: 160 }, finished => {
-        if (finished) {
-          dirLocked.value = false;
-          runOnJS(setIsCurling)(false);
+    useImperativeHandle(
+      ref,
+      () => ({
+        goNext: () => playCurl('next'),
+        goPrev: () => playCurl('prev'),
+      }),
+      [playCurl],
+    );
+
+    const pan = Gesture.Pan()
+      .activeOffsetX([-22, 22])
+      .failOffsetY([-16, 16])
+      .onBegin(event => {
+        topFlag.value = event.y < size.height / 2 ? 0 : 1;
+        dirLocked.value = false;
+        progress.value = 0;
+      })
+      .onUpdate(event => {
+        if (isAnimating.value) return;
+
+        const canGoPrev = canPrevSv.value;
+        const canGoNext = canNextSv.value;
+        const x = event.translationX;
+        const absX = Math.abs(x);
+
+        if (!dirLocked.value && absX > 10) {
+          const wantsNext = x < 0;
+          if ((wantsNext && !canGoNext) || (!wantsNext && !canGoPrev)) {
+            progress.value = Math.min(absX / size.width, 0.12);
+            return;
+          }
+          animDir.value = wantsNext ? 'next' : 'prev';
+          mirrorX.value = wantsNext ? 0 : 1;
+          dirLocked.value = true;
+          runOnJS(startCurlOverlay)();
         }
+
+        if (!dirLocked.value) return;
+
+        if (animDir.value === 'next') {
+          progress.value = Math.min(Math.max(-x, 0) / size.width, 1);
+        } else {
+          progress.value = Math.min(Math.max(x, 0) / size.width, 1);
+        }
+      })
+      .onEnd(event => {
+        if (isAnimating.value) return;
+
+        const canGoPrev = canPrevSv.value;
+        const canGoNext = canNextSv.value;
+        const shouldCommit =
+          progress.value > 0.28 ||
+          (animDir.value === 'next' && event.velocityX < -850) ||
+          (animDir.value === 'prev' && event.velocityX > 850);
+
+        const goingNext = animDir.value === 'next' && canGoNext;
+        const goingPrev = animDir.value === 'prev' && canGoPrev;
+
+        if (dirLocked.value && shouldCommit && (goingNext || goingPrev)) {
+          isAnimating.value = true;
+          const direction = animDir.value;
+          progress.value = withTiming(1, { duration: 420 }, finished => {
+            if (finished) {
+              dirLocked.value = false;
+              runOnJS(finishCurl)(direction);
+            }
+          });
+          return;
+        }
+
+        progress.value = withSpring(
+          0,
+          { damping: 18, stiffness: 160 },
+          finished => {
+            if (finished) {
+              dirLocked.value = false;
+              runOnJS(setIsCurling)(false);
+            }
+          },
+        );
       });
+
+    const uniforms = useDerivedValue(() => ({
+      resolution: [Math.max(size.width, 1), Math.max(size.height, 1)],
+      progress: progress.value,
+      topFlag: topFlag.value,
+      mirrorX: mirrorX.value,
+    }));
+
+    const fromImage = useDerivedValue(() => currentImage.value);
+
+    const toImage = useDerivedValue(() => {
+      if (animDir.value === 'prev') {
+        return prevImage.value ?? currentImage.value;
+      }
+      return nextImage.value ?? currentImage.value;
     });
 
-  const uniforms = useDerivedValue(() => ({
-    resolution: [Math.max(size.width, 1), Math.max(size.height, 1)],
-    progress: progress.value,
-    topFlag: topFlag.value,
-    mirrorX: mirrorX.value,
-  }));
+    const onLayout = (event: LayoutChangeEvent) => {
+      const { width, height } = event.nativeEvent.layout;
+      if (width > 0 && height > 0) {
+        setSize({ width, height });
+      }
+    };
 
-  const fromImage = useDerivedValue(() => currentImage.value);
+    const hasSize = size.width > 0 && size.height > 0;
+    const nextPage = Math.min(currentPage + 1, pageCount - 1);
+    const prevPage = Math.max(currentPage - 1, 0);
+    const currentUri = pageImages?.[currentPage] ?? null;
 
-  const toImage = useDerivedValue(() => {
-    if (animDir.value === 'prev') {
-      return prevImage.value ?? currentImage.value;
-    }
-    return nextImage.value ?? currentImage.value;
-  });
+    const liveContent = imageMode ? (
+      currentUri ? (
+        <Image
+          source={{ uri: currentUri }}
+          style={styles.pageImage}
+          resizeMode="contain"
+        />
+      ) : null
+    ) : (
+      renderPage?.(currentPage)
+    );
 
-  const onLayout = (event: LayoutChangeEvent) => {
-    const { width, height } = event.nativeEvent.layout;
-    if (width > 0 && height > 0) {
-      setSize({ width, height });
-    }
-  };
-
-  const hasSize = size.width > 0 && size.height > 0;
-  const nextPage = Math.min(currentPage + 1, pageCount - 1);
-  const prevPage = Math.max(currentPage - 1, 0);
-
-  return (
-    <GestureDetector gesture={pan}>
-      <View style={styles.container} onLayout={onLayout}>
-        {hasSize ? (
-          <View style={styles.snapshotLayer} pointerEvents="none">
-            <View
-              ref={currentRef}
-              collapsable={false}
-              style={[
-                styles.snapshotPage,
-                { width: size.width, height: size.height, backgroundColor: CURL_BG },
-              ]}>
-              {renderPage(currentPage)}
+    return (
+      <GestureDetector gesture={pan}>
+        <View
+          style={[
+            styles.container,
+            { backgroundColor },
+            imageMode && styles.fill,
+            style,
+          ]}
+          onLayout={onLayout}>
+          {!imageMode && hasSize && renderPage ? (
+            <View style={styles.snapshotLayer} pointerEvents="none">
+              <View
+                ref={currentRef}
+                collapsable={false}
+                style={[
+                  styles.snapshotPage,
+                  {
+                    width: size.width,
+                    height: size.height,
+                    backgroundColor,
+                  },
+                ]}>
+                {renderPage(currentPage)}
+              </View>
+              {currentPage < pageCount - 1 ? (
+                <View
+                  ref={nextRef}
+                  collapsable={false}
+                  style={[
+                    styles.snapshotPage,
+                    {
+                      width: size.width,
+                      height: size.height,
+                      backgroundColor,
+                    },
+                  ]}>
+                  {renderPage(nextPage)}
+                </View>
+              ) : null}
+              {currentPage > 0 ? (
+                <View
+                  ref={prevRef}
+                  collapsable={false}
+                  style={[
+                    styles.snapshotPage,
+                    {
+                      width: size.width,
+                      height: size.height,
+                      backgroundColor,
+                    },
+                  ]}>
+                  {renderPage(prevPage)}
+                </View>
+              ) : null}
             </View>
-            {currentPage < pageCount - 1 ? (
-              <View
-                ref={nextRef}
-                collapsable={false}
-                style={[
-                  styles.snapshotPage,
-                  { width: size.width, height: size.height, backgroundColor: CURL_BG },
-                ]}>
-                {renderPage(nextPage)}
-              </View>
-            ) : null}
-            {currentPage > 0 ? (
-              <View
-                ref={prevRef}
-                collapsable={false}
-                style={[
-                  styles.snapshotPage,
-                  { width: size.width, height: size.height, backgroundColor: CURL_BG },
-                ]}>
-                {renderPage(prevPage)}
-              </View>
-            ) : null}
-          </View>
-        ) : null}
+          ) : null}
 
-        <View style={[styles.liveLayer, isCurling && styles.hidden]} pointerEvents="box-none">
-          {renderPage(currentPage)}
-        </View>
-
-        {hasSize && isCurling ? (
-          <Animated.View
+          <View
             style={[
-              styles.canvasWrap,
-              { width: size.width, height: size.height, backgroundColor: CURL_BG },
-            ]}>
-            <Canvas style={{ width: size.width, height: size.height }}>
-              <Fill color={CURL_BG} />
-              <Fill>
-                <Shader source={effect} uniforms={uniforms}>
-                  <ImageShader
-                    image={fromImage}
-                    fit="cover"
-                    width={size.width}
-                    height={size.height}
-                  />
-                  <ImageShader
-                    image={toImage}
-                    fit="cover"
-                    width={size.width}
-                    height={size.height}
-                  />
-                </Shader>
-              </Fill>
-            </Canvas>
-          </Animated.View>
-        ) : null}
-      </View>
-    </GestureDetector>
-  );
-}
+              styles.liveLayer,
+              { backgroundColor },
+              imageMode && styles.fill,
+              isCurling && styles.hidden,
+            ]}
+            pointerEvents="box-none">
+            {liveContent}
+          </View>
+
+          {hasSize && isCurling ? (
+            <Animated.View
+              style={[
+                styles.canvasWrap,
+                {
+                  width: size.width,
+                  height: size.height,
+                  backgroundColor,
+                },
+              ]}>
+              <Canvas style={{ width: size.width, height: size.height }}>
+                <Fill color={backgroundColor} />
+                <Fill>
+                  <Shader source={effect} uniforms={uniforms}>
+                    <ImageShader
+                      image={fromImage}
+                      fit={imageMode ? 'contain' : 'cover'}
+                      width={size.width}
+                      height={size.height}
+                    />
+                    <ImageShader
+                      image={toImage}
+                      fit={imageMode ? 'contain' : 'cover'}
+                      width={size.width}
+                      height={size.height}
+                    />
+                  </Shader>
+                </Fill>
+              </Canvas>
+            </Animated.View>
+          ) : null}
+        </View>
+      </GestureDetector>
+    );
+  },
+);
 
 const styles = StyleSheet.create({
   container: {
     width: '100%',
     backgroundColor: CURL_BG,
+  },
+  fill: {
+    flex: 1,
+    height: '100%',
   },
   snapshotLayer: {
     position: 'absolute',
@@ -325,6 +507,10 @@ const styles = StyleSheet.create({
   liveLayer: {
     width: '100%',
     backgroundColor: CURL_BG,
+  },
+  pageImage: {
+    width: '100%',
+    height: '100%',
   },
   hidden: {
     opacity: 0,
