@@ -2,6 +2,9 @@ apply plugin: "com.android.application"
 apply plugin: "org.jetbrains.kotlin.android"
 apply plugin: "com.facebook.react"
 
+def bundleInDebug = project.hasProperty("bundleInDebug") &&
+        project.property("bundleInDebug").toString() == "true"
+
 /**
  * This is the configuration block to customize your React Native Android app.
  * By default you don't need to apply any configuration, just uncomment the lines you need.
@@ -18,10 +21,12 @@ react {
     // cliFile = file("../../node_modules/react-native/cli.js")
 
     /* Variants */
-    //   The list of variants to that are debuggable. For those we're going to
-    //   skip the bundling of the JS bundle and the assets. By default is just 'debug'.
-    //   If you add flavors like lite, prod, etc. you'll have to list your debuggableVariants.
-    // debuggableVariants = ["liteDebug", "prodDebug"]
+    //   Default debug skips JS bundling and loads from Metro.
+    //   apk:debug passes -PbundleInDebug=true so the APK embeds a fresh bundle.
+    if (bundleInDebug) {
+        debuggableVariants = []
+        extraPackagerArgs = ["--reset-cache"]
+    }
 
     /* Bundling */
     //   A list containing the node command and its flags. Default is just 'node'.
@@ -85,6 +90,7 @@ android {
         versionCode 3
         versionName "1.0.2"
         missingDimensionStrategy "react-native-capture-protection", "base"
+        buildConfigField "boolean", "LOAD_EMBEDDED_JS", "false"
     }
     signingConfigs {
         debug {
@@ -97,6 +103,9 @@ android {
     buildTypes {
         debug {
             signingConfig signingConfigs.debug
+            if (bundleInDebug) {
+                buildConfigField "boolean", "LOAD_EMBEDDED_JS", "true"
+            }
         }
         release {
             // Caution! In production, you need to generate your own keystore file.

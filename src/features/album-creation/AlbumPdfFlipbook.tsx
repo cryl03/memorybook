@@ -91,8 +91,10 @@ function rasterHtml(): string {
           canvas.width = Math.floor(viewport.width);
           canvas.height = Math.floor(viewport.height);
           var ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
           return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
-            var jpeg = canvas.toDataURL('image/jpeg', 0.7);
+            var jpeg = canvas.toDataURL('image/jpeg', 0.85);
             post({ type: 'rasterPage', page: n, total: total, data: jpeg });
             canvas.width = 0;
             canvas.height = 0;
@@ -335,7 +337,7 @@ export const AlbumPdfFlipbook = forwardRef<
           pageImages={images}
           onNext={onNext}
           onPrev={onPrev}
-          backgroundColor="#FAF7F2"
+          backgroundColor="#FFFFFF"
         />
       ) : null}
       {loading || !currentUri ? (

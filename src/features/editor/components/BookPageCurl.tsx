@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -28,6 +29,7 @@ import {
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
   runOnJS,
+  useAnimatedStyle,
   useDerivedValue,
   useSharedValue,
   withSpring,
@@ -85,6 +87,9 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
     const imageMode = Boolean(pageImages);
     const [size, setSize] = useState({ width: 0, height: 0 });
     const [isCurling, setIsCurling] = useState(false);
+    /** Page shown under the canvas so hide-overlay never flashes the old sheet. */
+    const [underlayPage, setUnderlayPage] = useState(currentPage);
+    const commitPending = useRef(false);
 
     const currentRef = useRef<View>(null);
     const nextRef = useRef<View>(null);
@@ -96,6 +101,7 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
     const prevImage = useSharedValue<SkImage | null>(null);
 
     const progress = useSharedValue(0);
+    const overlayOpacity = useSharedValue(0);
     const topFlag = useSharedValue(1);
     /** 0 = next (peel leftward), 1 = prev (peel rightward) */
     const mirrorX = useSharedValue(0);
@@ -124,6 +130,11 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
     }, [currentPage, lastPageIndex, pageCount, pageIndex]);
 
     useEffect(() => {
+      if (isCurling) return;
+      setUnderlayPage(currentPage);
+    }, [currentPage, isCurling]);
+
+    useEffect(() => {
       const hasNext =
         currentPage < pageCount - 1 &&
         (!pageImages || Boolean(pageImages[currentPage + 1]));
@@ -135,6 +146,7 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
 
     useEffect(() => {
       if (!pageImages) return;
+      if (isCurling) return;
       const keep = new Set(pageImages.filter((uri): uri is string => Boolean(uri)));
       for (const key of [...skCache.current.keys()]) {
         if (!keep.has(key)) skCache.current.delete(key);
@@ -149,6 +161,7 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
       currentPage,
       getSk,
       nextImage,
+      isCurling,
       pageCount,
       pageImages,
       prevImage,
@@ -205,27 +218,51 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
 
     useEffect(() => {
       if (imageMode) return;
+      if (isCurling) return;
       if (size.width <= 0) return;
       const timer = setTimeout(() => {
         void refreshSnapshots();
       }, 80);
       return () => clearTimeout(timer);
-    }, [currentPage, imageMode, refreshSnapshots, size]);
+    }, [currentPage, imageMode, isCurling, refreshSnapshots, size]);
 
     const finishCurl = useCallback(
       (direction: 'next' | 'prev') => {
-        progress.value = 0;
+        // Hide overlay first. Keep progress at 1 so we never flash the old sheet.
+        overlayOpacity.value = 0;
         isAnimating.value = false;
-        setIsCurling(false);
+        commitPending.current = true;
         if (direction === 'next') onNext();
         else onPrev();
       },
-      [isAnimating, onNext, onPrev, progress],
+      [isAnimating, onNext, onPrev, overlayOpacity],
     );
 
-    const startCurlOverlay = useCallback(() => {
+    useLayoutEffect(() => {
+      if (!commitPending.current) return;
+      commitPending.current = false;
+      overlayOpacity.value = 0;
+      progress.value = 0;
+      isAnimating.value = false;
+      setIsCurling(false);
+    }, [currentPage, isAnimating, overlayOpacity, progress]);
+
+    const startCurlOverlay = useCallback((direction: 'next' | 'prev') => {
+      const dest =
+        direction === 'next'
+          ? Math.min(currentPage + 1, pageCount - 1)
+          : Math.max(currentPage - 1, 0);
+      overlayOpacity.value = 1;
+      setUnderlayPage(dest);
       setIsCurling(true);
-    }, []);
+    }, [currentPage, overlayOpacity, pageCount]);
+
+    const cancelCurl = useCallback(() => {
+      overlayOpacity.value = 0;
+      progress.value = 0;
+      setUnderlayPage(currentPage);
+      setIsCurling(false);
+    }, [currentPage, overlayOpacity, progress]);
 
     const playCurl = useCallback(
       (direction: 'next' | 'prev') => {
@@ -237,7 +274,7 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
         animDir.value = direction;
         mirrorX.value = direction === 'next' ? 0 : 1;
         dirLocked.value = true;
-        setIsCurling(true);
+        startCurlOverlay(direction);
         isAnimating.value = true;
         progress.value = withTiming(1, { duration: 420 }, finished => {
           if (finished) {
@@ -250,6 +287,7 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
         animDir,
         canNextSv,
         canPrevSv,
+        startCurlOverlay,
         dirLocked,
         finishCurl,
         isAnimating,
@@ -292,7 +330,7 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
           animDir.value = wantsNext ? 'next' : 'prev';
           mirrorX.value = wantsNext ? 0 : 1;
           dirLocked.value = true;
-          runOnJS(startCurlOverlay)();
+          runOnJS(startCurlOverlay)(wantsNext ? 'next' : 'prev');
         }
 
         if (!dirLocked.value) return;
@@ -334,11 +372,15 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
           finished => {
             if (finished) {
               dirLocked.value = false;
-              runOnJS(setIsCurling)(false);
+              runOnJS(cancelCurl)();
             }
           },
         );
       });
+
+    const overlayStyle = useAnimatedStyle(() => ({
+      opacity: overlayOpacity.value,
+    }));
 
     const uniforms = useDerivedValue(() => ({
       resolution: [Math.max(size.width, 1), Math.max(size.height, 1)],
@@ -366,18 +408,20 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
     const hasSize = size.width > 0 && size.height > 0;
     const nextPage = Math.min(currentPage + 1, pageCount - 1);
     const prevPage = Math.max(currentPage - 1, 0);
-    const currentUri = pageImages?.[currentPage] ?? null;
+    const livePage = isCurling ? underlayPage : currentPage;
+    const currentUri = pageImages?.[livePage] ?? null;
 
     const liveContent = imageMode ? (
       currentUri ? (
         <Image
           source={{ uri: currentUri }}
           style={styles.pageImage}
-          resizeMode="contain"
+          resizeMode="cover"
+          fadeDuration={0}
         />
       ) : null
     ) : (
-      renderPage?.(currentPage)
+      renderPage?.(livePage)
     );
 
     return (
@@ -443,14 +487,14 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
               styles.liveLayer,
               { backgroundColor },
               imageMode && styles.fill,
-              isCurling && styles.hidden,
             ]}
             pointerEvents="box-none">
             {liveContent}
           </View>
 
-          {hasSize && isCurling ? (
+          {hasSize ? (
             <Animated.View
+              pointerEvents="none"
               style={[
                 styles.canvasWrap,
                 {
@@ -458,25 +502,28 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
                   height: size.height,
                   backgroundColor,
                 },
+                overlayStyle,
               ]}>
               <Canvas style={{ width: size.width, height: size.height }}>
                 <Fill color={backgroundColor} />
-                <Fill>
-                  <Shader source={effect} uniforms={uniforms}>
-                    <ImageShader
-                      image={fromImage}
-                      fit={imageMode ? 'contain' : 'cover'}
-                      width={size.width}
-                      height={size.height}
-                    />
-                    <ImageShader
-                      image={toImage}
-                      fit={imageMode ? 'contain' : 'cover'}
-                      width={size.width}
-                      height={size.height}
-                    />
-                  </Shader>
-                </Fill>
+                {isCurling ? (
+                  <Fill>
+                    <Shader source={effect} uniforms={uniforms}>
+                      <ImageShader
+                        image={fromImage}
+                        fit="cover"
+                        width={size.width}
+                        height={size.height}
+                      />
+                      <ImageShader
+                        image={toImage}
+                        fit="cover"
+                        width={size.width}
+                        height={size.height}
+                      />
+                    </Shader>
+                  </Fill>
+                ) : null}
               </Canvas>
             </Animated.View>
           ) : null}
@@ -511,9 +558,6 @@ const styles = StyleSheet.create({
   pageImage: {
     width: '100%',
     height: '100%',
-  },
-  hidden: {
-    opacity: 0,
   },
   canvasWrap: {
     position: 'absolute',
