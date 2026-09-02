@@ -9,7 +9,8 @@ import { RootNavigator } from '@core/navigation';
 
 function App() {
   useEffect(() => {
-    void CaptureProtection.prevent({
+    // TEMP: allow screenshots. Restore prevent({ screenshot, record, appSwitcher }) before release.
+    void CaptureProtection.allow({
       screenshot: true,
       record: true,
       appSwitcher: true,

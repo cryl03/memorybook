@@ -10,6 +10,9 @@ import {
 } from './AlbumPdfFlipbook';
 
 const { width } = Dimensions.get('window');
+const OPEN_W = width * 0.92;
+const PAGE_W = OPEN_W / 2;
+const OPEN_H = PAGE_W * 1.38;
 
 interface WowScreenProps {
   albumTitle: string;
@@ -36,7 +39,9 @@ export function WowScreen({
   const pdfRevision = album.currentAlbum?.pdfUrl;
   const [pdfPage, setPdfPage] = React.useState(1);
   const [pdfPageCount, setPdfPageCount] = React.useState(0);
+  const [pdfPages, setPdfPages] = React.useState(0);
   const [pdfFailed, setPdfFailed] = React.useState(false);
+  const [isCurling, setIsCurling] = React.useState(false);
   const flipRef = React.useRef<AlbumPdfFlipbookHandle>(null);
   const showPdf = Boolean(isAuthenticated && remoteId && !pdfFailed);
   const photoPageCount = photos.length;
@@ -48,7 +53,9 @@ export function WowScreen({
   React.useEffect(() => {
     setPdfPage(1);
     setPdfPageCount(0);
+    setPdfPages(0);
     setPdfFailed(false);
+    setIsCurling(false);
   }, [remoteId]);
 
   const handleSave = async () => {
@@ -60,6 +67,20 @@ export function WowScreen({
       setIsSaving(false);
     }
   };
+
+  const isClosedSheet =
+    showPdf &&
+    (pdfPageCount <= 1 || pdfPage <= 1 || pdfPage >= pdfPageCount);
+  const bookOpen = showPdf && (!isClosedSheet || isCurling);
+  const pageLabel = !showPdf
+    ? visiblePageCount > 0
+      ? `${pdfPage} / ${visiblePageCount}`
+      : 'Portada'
+    : pdfPage <= 1
+      ? 'Portada'
+      : pdfPage >= visiblePageCount
+        ? 'Contraportada'
+        : `${pdfPage} / ${visiblePageCount}`;
 
   return (
     <LinearGradient
@@ -74,18 +95,23 @@ export function WowScreen({
           <Text style={styles.backText}>Volver</Text>
         </TouchableOpacity>
       ) : null}
-      {/* Closed cover only — no glow circle */}
+      {/* Libro: cerrado en portada/contraportada, abierto en spreads */}
       <View style={styles.bookWrapper}>
-        <View style={[styles.bookCover, showPdf ? styles.bookCoverPdf : null]}>
-          {showPdf && remoteId ? (
-            <View style={styles.pdfSlot}>
+        {showPdf && remoteId ? (
+          <View
+            style={[
+              styles.bookClip,
+              bookOpen ? styles.bookClipOpen : styles.bookClipClosed,
+            ]}>
+            <View style={styles.bookInner}>
               <AlbumPdfFlipbook
                 ref={flipRef}
                 albumId={remoteId}
                 page={pdfPage}
                 revision={pdfRevision}
-                onDocumentLoad={total => {
-                  setPdfPageCount(total);
+                onDocumentLoad={(sheets, pdfTotal) => {
+                  setPdfPageCount(sheets);
+                  if (pdfTotal) setPdfPages(pdfTotal);
                 }}
                 onNext={() =>
                   setPdfPage(p =>
@@ -93,33 +119,35 @@ export function WowScreen({
                   )
                 }
                 onPrev={() => setPdfPage(p => Math.max(1, p - 1))}
+                onCurlStart={() => setIsCurling(true)}
+                onCurlEnd={() => setIsCurling(false)}
                 onError={() => {
                   setPdfFailed(true);
                   setPdfPage(1);
                 }}
               />
             </View>
-          ) : (
-            <>
-              <View style={styles.bookPhotoFrame}>
-                {coverUri ? (
-                  <Image
-                    source={{ uri: coverUri }}
-                    style={styles.bookPhoto}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <View style={styles.bookPhotoPlaceholder} />
-                )}
-              </View>
-              <View style={styles.bookTextLines}>
-                <View style={styles.textLine} />
-                <View style={[styles.textLine, { width: '70%' }]} />
-                <View style={[styles.textLine, { width: '50%' }]} />
-              </View>
-            </>
-          )}
-        </View>
+          </View>
+        ) : (
+          <View style={styles.bookCover}>
+            <View style={styles.bookPhotoFrame}>
+              {coverUri ? (
+                <Image
+                  source={{ uri: coverUri }}
+                  style={styles.bookPhoto}
+                  resizeMode="cover"
+                />
+              ) : (
+                <View style={styles.bookPhotoPlaceholder} />
+              )}
+            </View>
+            <View style={styles.bookTextLines}>
+              <View style={styles.textLine} />
+              <View style={[styles.textLine, { width: '70%' }]} />
+              <View style={[styles.textLine, { width: '50%' }]} />
+            </View>
+          </View>
+        )}
       </View>
 
       <Text style={styles.albumTitle}>{albumTitle}</Text>
@@ -127,7 +155,7 @@ export function WowScreen({
         {visiblePageCount > 0 ? (
           <Text style={styles.albumMeta}>
             {showPdf
-              ? `${pdfPageCount} páginas`
+              ? `${pdfPages || pdfPageCount} páginas`
               : `${photoPageCount} foto${photoPageCount === 1 ? '' : 's'}`}
           </Text>
         ) : (
@@ -168,9 +196,7 @@ export function WowScreen({
             resizeMode="contain"
           />
         </TouchableOpacity>
-        <Text style={styles.pageIndicator}>
-          {visiblePageCount > 0 ? `${pdfPage} / ${visiblePageCount}` : 'Portada'}
-        </Text>
+        <Text style={styles.pageIndicator}>{pageLabel}</Text>
         <TouchableOpacity
           disabled={visiblePageCount === 0 || pdfPage >= visiblePageCount}
           onPress={() => {
@@ -250,16 +276,28 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     elevation: 8,
   },
-  bookCoverPdf: {
-    paddingTop: 0,
-    paddingHorizontal: 0,
-    backgroundColor: colors.surface,
-  },
-  pdfSlot: {
-    width: '100%',
-    flex: 1,
-    borderRadius: borderRadius.sm,
+  bookClip: {
     overflow: 'hidden',
+    alignItems: 'center',
+    borderRadius: borderRadius.sm,
+    backgroundColor: '#FAF7F2',
+    shadowColor: '#000',
+    shadowOffset: { width: 2, height: 6 },
+    shadowOpacity: 0.12,
+    shadowRadius: 12,
+    elevation: 8,
+  },
+  bookClipClosed: {
+    width: PAGE_W,
+    height: OPEN_H,
+  },
+  bookClipOpen: {
+    width: OPEN_W,
+    height: OPEN_H,
+  },
+  bookInner: {
+    width: OPEN_W,
+    height: OPEN_H,
   },
   bookPhotoFrame: {
     width: '55%',

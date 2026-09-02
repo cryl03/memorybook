@@ -51,10 +51,12 @@ interface AlbumPdfFlipbookProps {
   albumId: string;
   page: number;
   revision?: string;
-  onDocumentLoad?: (pageCount: number) => void;
+  onDocumentLoad?: (sheetCount: number, pdfPages?: number) => void;
   onNext: () => void;
   onPrev: () => void;
   onError?: (message: string) => void;
+  onCurlStart?: () => void;
+  onCurlEnd?: () => void;
 }
 
 function rasterHtml(): string {
@@ -73,34 +75,97 @@ function rasterHtml(): string {
     function post(msg) {
       window.ReactNativeWebView.postMessage(JSON.stringify(msg));
     }
+    function renderPdfPage(n, pageWidth) {
+      return pdfDoc.getPage(n).then(function(page) {
+        var unscaled = page.getViewport({ scale: 1 });
+        var scale = pageWidth / unscaled.width;
+        var viewport = page.getViewport({ scale: scale });
+        var canvas = document.createElement('canvas');
+        canvas.width = Math.floor(viewport.width);
+        canvas.height = Math.floor(viewport.height);
+        var ctx = canvas.getContext('2d');
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
+          return canvas;
+        });
+      });
+    }
+    function toJpeg(canvas) {
+      return canvas.toDataURL('image/jpeg', 0.85);
+    }
+    function makeSpread(leftCanvas, rightCanvas) {
+      var w = leftCanvas.width;
+      var h = leftCanvas.height;
+      var out = document.createElement('canvas');
+      out.width = w * 2;
+      out.height = h;
+      var ctx = out.getContext('2d');
+      ctx.fillStyle = '#FFFFFF';
+      ctx.fillRect(0, 0, out.width, out.height);
+      ctx.drawImage(leftCanvas, 0, 0, w, h);
+      if (rightCanvas) ctx.drawImage(rightCanvas, w, 0, w, h);
+      ctx.fillStyle = 'rgba(0,0,0,0.14)';
+      ctx.fillRect(w - 1, 0, 3, h);
+      return out;
+    }
+    function makeClosed(coverCanvas, spineLeft) {
+      var w = coverCanvas.width;
+      var h = coverCanvas.height;
+      var out = document.createElement('canvas');
+      out.width = w * 2;
+      out.height = h;
+      var ctx = out.getContext('2d');
+      ctx.fillStyle = '#FAF7F2';
+      ctx.fillRect(0, 0, out.width, out.height);
+      var x = Math.floor(w / 2);
+      ctx.fillStyle = 'rgba(0,0,0,0.12)';
+      ctx.fillRect(x + 5, 8, w, h - 8);
+      ctx.drawImage(coverCanvas, x, 0, w, h);
+      ctx.fillStyle = 'rgba(0,0,0,0.22)';
+      if (spineLeft) ctx.fillRect(x, 0, 10, h);
+      else ctx.fillRect(x + w - 10, 0, 10, h);
+      return out;
+    }
     function rasterAll(targetWidth) {
       if (!pdfDoc) return;
-      var n = 1;
-      var total = pdfDoc.numPages;
+      var nPages = pdfDoc.numPages;
       var width = Math.max(320, targetWidth || 900);
+      var sheets = [{ kind: 'cover', left: 1, right: 0 }];
+      for (var i = 2; i <= nPages - 1; i += 2) {
+        sheets.push({
+          kind: 'spread',
+          left: i,
+          right: i + 1 <= nPages - 1 ? i + 1 : 0,
+        });
+      }
+      if (nPages >= 2) sheets.push({ kind: 'back', left: nPages, right: 0 });
+      post({ type: 'ready', total: sheets.length, pdfPages: nPages });
+      var s = 0;
       function next() {
-        if (n > total) {
-          post({ type: 'rasterDone', total: total });
+        if (s >= sheets.length) {
+          post({ type: 'rasterDone', total: sheets.length });
           return;
         }
-        pdfDoc.getPage(n).then(function(page) {
-          var unscaled = page.getViewport({ scale: 1 });
-          var scale = width / unscaled.width;
-          var viewport = page.getViewport({ scale: scale });
-          var canvas = document.createElement('canvas');
-          canvas.width = Math.floor(viewport.width);
-          canvas.height = Math.floor(viewport.height);
-          var ctx = canvas.getContext('2d');
-          ctx.fillStyle = '#FFFFFF';
-          ctx.fillRect(0, 0, canvas.width, canvas.height);
-          return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
-            var jpeg = canvas.toDataURL('image/jpeg', 0.85);
-            post({ type: 'rasterPage', page: n, total: total, data: jpeg });
-            canvas.width = 0;
-            canvas.height = 0;
-            n += 1;
-            setTimeout(next, 0);
+        var sheet = sheets[s];
+        var jobs = [renderPdfPage(sheet.left, width)];
+        if (sheet.right) jobs.push(renderPdfPage(sheet.right, width));
+        Promise.all(jobs).then(function(canvases) {
+          var out = sheet.kind === 'spread'
+            ? makeSpread(canvases[0], canvases[1] || null)
+            : makeClosed(canvases[0], sheet.kind === 'cover');
+          post({
+            type: 'rasterPage',
+            page: s + 1,
+            total: sheets.length,
+            data: toJpeg(out),
+            kind: sheet.kind,
           });
+          out.width = 0;
+          out.height = 0;
+          canvases.forEach(function(c) { c.width = 0; c.height = 0; });
+          s += 1;
+          setTimeout(next, 0);
         }).catch(function(err) {
           post({ type: 'error', message: String(err && err.message ? err.message : err) });
         });
@@ -119,7 +184,6 @@ function rasterHtml(): string {
           return;
         }
         pdfDoc = pdf;
-        post({ type: 'ready', total: pdf.numPages });
         rasterAll(targetWidth);
       }).catch(function(err) {
         if (gen !== showGen) return;
@@ -133,17 +197,17 @@ function rasterHtml(): string {
 }
 
 const RASTER_HTML = rasterHtml();
-const BOOK_WIDTH = Dimensions.get('window').width * 0.78;
+const OPEN_W = Dimensions.get('window').width * 0.92;
 const TARGET_WIDTH = Math.min(
-  Math.round(BOOK_WIDTH * PixelRatio.get()),
-  1400,
+  Math.round((OPEN_W / 2) * PixelRatio.get()),
+  1100,
 );
 
 export const AlbumPdfFlipbook = forwardRef<
   AlbumPdfFlipbookHandle,
   AlbumPdfFlipbookProps
 >(function AlbumPdfFlipbook(
-  { albumId, page, revision, onDocumentLoad, onNext, onPrev, onError },
+  { albumId, page, revision, onDocumentLoad, onNext, onPrev, onError, onCurlStart, onCurlEnd },
   ref,
 ) {
   const webRef = useRef<{ injectJavaScript?: (js: string) => void } | null>(
@@ -252,13 +316,14 @@ export const AlbumPdfFlipbook = forwardRef<
         type?: string;
         page?: number;
         total?: number;
+        pdfPages?: number;
         data?: string;
         message?: string;
       };
       if (payload.type === 'ready' && payload.total) {
         setPageCount(payload.total);
         setImages(Array(payload.total).fill(null));
-        onDocumentLoadRef.current?.(payload.total);
+        onDocumentLoadRef.current?.(payload.total, payload.pdfPages);
       }
       if (payload.type === 'rasterPage' && payload.page && payload.data) {
         const index = payload.page - 1;
@@ -337,7 +402,9 @@ export const AlbumPdfFlipbook = forwardRef<
           pageImages={images}
           onNext={onNext}
           onPrev={onPrev}
-          backgroundColor="#FFFFFF"
+          onCurlStart={onCurlStart}
+          onCurlEnd={onCurlEnd}
+          backgroundColor="#FAF7F2"
         />
       ) : null}
       {loading || !currentUri ? (
@@ -355,7 +422,7 @@ const styles = StyleSheet.create({
     height: '100%',
     borderRadius: borderRadius.sm,
     overflow: 'hidden',
-    backgroundColor: colors.surface,
+    backgroundColor: '#FAF7F2',
   },
   hiddenWebWrap: {
     position: 'absolute',

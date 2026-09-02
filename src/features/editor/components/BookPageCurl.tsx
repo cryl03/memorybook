@@ -55,6 +55,8 @@ interface BookPageCurlProps {
   pageImages?: (string | null)[];
   backgroundColor?: string;
   style?: StyleProp<ViewStyle>;
+  onCurlStart?: () => void;
+  onCurlEnd?: () => void;
 }
 
 type SnapTarget = 'current' | 'next' | 'prev';
@@ -81,6 +83,8 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
       pageImages,
       backgroundColor = CURL_BG,
       style,
+      onCurlStart,
+      onCurlEnd,
     },
     ref,
   ) {
@@ -90,6 +94,10 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
     /** Page shown under the canvas so hide-overlay never flashes the old sheet. */
     const [underlayPage, setUnderlayPage] = useState(currentPage);
     const commitPending = useRef(false);
+    const onCurlStartRef = useRef(onCurlStart);
+    const onCurlEndRef = useRef(onCurlEnd);
+    onCurlStartRef.current = onCurlStart;
+    onCurlEndRef.current = onCurlEnd;
 
     const currentRef = useRef<View>(null);
     const nextRef = useRef<View>(null);
@@ -245,6 +253,7 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
       progress.value = 0;
       isAnimating.value = false;
       setIsCurling(false);
+      onCurlEndRef.current?.();
     }, [currentPage, isAnimating, overlayOpacity, progress]);
 
     const startCurlOverlay = useCallback((direction: 'next' | 'prev') => {
@@ -255,6 +264,7 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
       overlayOpacity.value = 1;
       setUnderlayPage(dest);
       setIsCurling(true);
+      onCurlStartRef.current?.();
     }, [currentPage, overlayOpacity, pageCount]);
 
     const cancelCurl = useCallback(() => {
@@ -262,6 +272,7 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
       progress.value = 0;
       setUnderlayPage(currentPage);
       setIsCurling(false);
+      onCurlEndRef.current?.();
     }, [currentPage, overlayOpacity, progress]);
 
     const playCurl = useCallback(
@@ -416,7 +427,7 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
         <Image
           source={{ uri: currentUri }}
           style={styles.pageImage}
-          resizeMode="cover"
+          resizeMode="contain"
           fadeDuration={0}
         />
       ) : null
@@ -511,13 +522,13 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
                     <Shader source={effect} uniforms={uniforms}>
                       <ImageShader
                         image={fromImage}
-                        fit="cover"
+                        fit={imageMode ? 'contain' : 'cover'}
                         width={size.width}
                         height={size.height}
                       />
                       <ImageShader
                         image={toImage}
-                        fit="cover"
+                        fit={imageMode ? 'contain' : 'cover'}
                         width={size.width}
                         height={size.height}
                       />
