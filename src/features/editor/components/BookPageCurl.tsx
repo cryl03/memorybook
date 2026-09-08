@@ -398,6 +398,8 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
       progress: progress.value,
       topFlag: topFlag.value,
       mirrorX: mirrorX.value,
+      fromRect: [0, 0, 1, 1],
+      toRect: [0, 0, 1, 1],
     }));
 
     const fromImage = useDerivedValue(() => currentImage.value);
@@ -427,7 +429,7 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
         <Image
           source={{ uri: currentUri }}
           style={styles.pageImage}
-          resizeMode="contain"
+          resizeMode="cover"
           fadeDuration={0}
         />
       ) : null
@@ -522,13 +524,17 @@ export const BookPageCurl = forwardRef<BookPageCurlHandle, BookPageCurlProps>(
                     <Shader source={effect} uniforms={uniforms}>
                       <ImageShader
                         image={fromImage}
-                        fit={imageMode ? 'contain' : 'cover'}
+                        fit="fill"
+                        tx="clamp"
+                        ty="clamp"
                         width={size.width}
                         height={size.height}
                       />
                       <ImageShader
                         image={toImage}
-                        fit={imageMode ? 'contain' : 'cover'}
+                        fit="fill"
+                        tx="clamp"
+                        ty="clamp"
                         width={size.width}
                         height={size.height}
                       />

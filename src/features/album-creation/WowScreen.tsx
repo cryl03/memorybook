@@ -278,7 +278,6 @@ const styles = StyleSheet.create({
   },
   bookClip: {
     overflow: 'hidden',
-    alignItems: 'center',
     borderRadius: borderRadius.sm,
     backgroundColor: '#FAF7F2',
     shadowColor: '#000',
@@ -296,8 +295,8 @@ const styles = StyleSheet.create({
     height: OPEN_H,
   },
   bookInner: {
-    width: OPEN_W,
-    height: OPEN_H,
+    width: '100%',
+    height: '100%',
   },
   bookPhotoFrame: {
     width: '55%',

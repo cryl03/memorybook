@@ -3,6 +3,7 @@ import React, {
   useCallback,
   useEffect,
   useImperativeHandle,
+  useMemo,
   useRef,
   useState,
 } from 'react';
@@ -22,9 +23,10 @@ import { albumService } from '@core/api';
 import { arrayBufferToBase64 } from '@core/api/pdfUrl';
 import { getErrorMessage } from '@core/api/errors';
 import {
-  BookPageCurl,
-  type BookPageCurlHandle,
-} from '../editor/components/BookPageCurl';
+  BookSpreadCurl,
+  buildAlbumViews,
+} from './BookSpreadCurl';
+import type { BookPageCurlHandle } from '../editor/components/BookPageCurl';
 import { AlbumPdfPreview } from './AlbumPdfPreview';
 
 const RasterWebView = WebView as unknown as React.ComponentType<{
@@ -75,97 +77,39 @@ function rasterHtml(): string {
     function post(msg) {
       window.ReactNativeWebView.postMessage(JSON.stringify(msg));
     }
-    function renderPdfPage(n, pageWidth) {
-      return pdfDoc.getPage(n).then(function(page) {
-        var unscaled = page.getViewport({ scale: 1 });
-        var scale = pageWidth / unscaled.width;
-        var viewport = page.getViewport({ scale: scale });
-        var canvas = document.createElement('canvas');
-        canvas.width = Math.floor(viewport.width);
-        canvas.height = Math.floor(viewport.height);
-        var ctx = canvas.getContext('2d');
-        ctx.fillStyle = '#FFFFFF';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-        return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
-          return canvas;
-        });
-      });
-    }
-    function toJpeg(canvas) {
-      return canvas.toDataURL('image/jpeg', 0.85);
-    }
-    function makeSpread(leftCanvas, rightCanvas) {
-      var w = leftCanvas.width;
-      var h = leftCanvas.height;
-      var out = document.createElement('canvas');
-      out.width = w * 2;
-      out.height = h;
-      var ctx = out.getContext('2d');
-      ctx.fillStyle = '#FFFFFF';
-      ctx.fillRect(0, 0, out.width, out.height);
-      ctx.drawImage(leftCanvas, 0, 0, w, h);
-      if (rightCanvas) ctx.drawImage(rightCanvas, w, 0, w, h);
-      ctx.fillStyle = 'rgba(0,0,0,0.14)';
-      ctx.fillRect(w - 1, 0, 3, h);
-      return out;
-    }
-    function makeClosed(coverCanvas, spineLeft) {
-      var w = coverCanvas.width;
-      var h = coverCanvas.height;
-      var out = document.createElement('canvas');
-      out.width = w * 2;
-      out.height = h;
-      var ctx = out.getContext('2d');
-      ctx.fillStyle = '#FAF7F2';
-      ctx.fillRect(0, 0, out.width, out.height);
-      var x = Math.floor(w / 2);
-      ctx.fillStyle = 'rgba(0,0,0,0.12)';
-      ctx.fillRect(x + 5, 8, w, h - 8);
-      ctx.drawImage(coverCanvas, x, 0, w, h);
-      ctx.fillStyle = 'rgba(0,0,0,0.22)';
-      if (spineLeft) ctx.fillRect(x, 0, 10, h);
-      else ctx.fillRect(x + w - 10, 0, 10, h);
-      return out;
-    }
     function rasterAll(targetWidth) {
       if (!pdfDoc) return;
-      var nPages = pdfDoc.numPages;
+      var n = 1;
+      var total = pdfDoc.numPages;
       var width = Math.max(320, targetWidth || 900);
-      var sheets = [{ kind: 'cover', left: 1, right: 0 }];
-      for (var i = 2; i <= nPages - 1; i += 2) {
-        sheets.push({
-          kind: 'spread',
-          left: i,
-          right: i + 1 <= nPages - 1 ? i + 1 : 0,
-        });
-      }
-      if (nPages >= 2) sheets.push({ kind: 'back', left: nPages, right: 0 });
-      post({ type: 'ready', total: sheets.length, pdfPages: nPages });
-      var s = 0;
+      post({ type: 'ready', total: total, pdfPages: total });
       function next() {
-        if (s >= sheets.length) {
-          post({ type: 'rasterDone', total: sheets.length });
+        if (n > total) {
+          post({ type: 'rasterDone', total: total });
           return;
         }
-        var sheet = sheets[s];
-        var jobs = [renderPdfPage(sheet.left, width)];
-        if (sheet.right) jobs.push(renderPdfPage(sheet.right, width));
-        Promise.all(jobs).then(function(canvases) {
-          var out = sheet.kind === 'spread'
-            ? makeSpread(canvases[0], canvases[1] || null)
-            : makeClosed(canvases[0], sheet.kind === 'cover');
-          post({
-            type: 'rasterPage',
-            page: s + 1,
-            total: sheets.length,
-            data: toJpeg(out),
-            kind: sheet.kind,
+        pdfDoc.getPage(n).then(function(page) {
+          var unscaled = page.getViewport({ scale: 1 });
+          var scale = width / unscaled.width;
+          var viewport = page.getViewport({ scale: scale });
+          var canvas = document.createElement('canvas');
+          canvas.width = Math.floor(viewport.width);
+          canvas.height = Math.floor(viewport.height);
+          var ctx = canvas.getContext('2d');
+          ctx.fillStyle = '#FFFFFF';
+          ctx.fillRect(0, 0, canvas.width, canvas.height);
+          return page.render({ canvasContext: ctx, viewport: viewport }).promise.then(function() {
+            post({
+              type: 'rasterPage',
+              page: n,
+              total: total,
+              data: canvas.toDataURL('image/jpeg', 0.85),
+            });
+            canvas.width = 0;
+            canvas.height = 0;
+            n += 1;
+            setTimeout(next, 0);
           });
-          out.width = 0;
-          out.height = 0;
-          canvases.forEach(function(c) { c.width = 0; c.height = 0; });
-          s += 1;
-          setTimeout(next, 0);
         }).catch(function(err) {
           post({ type: 'error', message: String(err && err.message ? err.message : err) });
         });
@@ -224,6 +168,7 @@ export const AlbumPdfFlipbook = forwardRef<
   const [rasterFailed, setRasterFailed] = useState(false);
   const [images, setImages] = useState<(string | null)[]>([]);
   const [pageCount, setPageCount] = useState(0);
+  const views = useMemo(() => buildAlbumViews(pageCount), [pageCount]);
 
   const loadGen = useRef(0);
   const base64Ref = useRef<string | null>(null);
@@ -323,7 +268,10 @@ export const AlbumPdfFlipbook = forwardRef<
       if (payload.type === 'ready' && payload.total) {
         setPageCount(payload.total);
         setImages(Array(payload.total).fill(null));
-        onDocumentLoadRef.current?.(payload.total, payload.pdfPages);
+        onDocumentLoadRef.current?.(
+          buildAlbumViews(payload.total).length,
+          payload.pdfPages ?? payload.total,
+        );
       }
       if (payload.type === 'rasterPage' && payload.page && payload.data) {
         const index = payload.page - 1;
@@ -371,7 +319,12 @@ export const AlbumPdfFlipbook = forwardRef<
     );
   }
 
-  const currentUri = images[page - 1];
+  const view = views[page - 1];
+  const viewReady = Boolean(
+    view &&
+      images[view.left] &&
+      (view.right == null || images[view.right]),
+  );
 
   return (
     <View style={styles.frame}>
@@ -394,20 +347,19 @@ export const AlbumPdfFlipbook = forwardRef<
           allowUniversalAccessFromFileURLs
         />
       </View>
-      {currentUri && pageCount > 0 ? (
-        <BookPageCurl
+      {viewReady ? (
+        <BookSpreadCurl
           ref={curlRef}
-          currentPage={page - 1}
-          pageCount={pageCount}
-          pageImages={images}
+          pages={images}
+          viewIndex={page - 1}
+          views={views}
           onNext={onNext}
           onPrev={onPrev}
           onCurlStart={onCurlStart}
           onCurlEnd={onCurlEnd}
-          backgroundColor="#FAF7F2"
         />
       ) : null}
-      {loading || !currentUri ? (
+      {loading || !viewReady ? (
         <View style={styles.loading}>
           <ActivityIndicator color={colors.text.primary} />
         </View>

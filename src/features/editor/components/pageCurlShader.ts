@@ -7,6 +7,8 @@ export const PAGE_CURL_SHADER = `
   uniform float progress;
   uniform float topFlag;   // 1.0 top bias, 0.0 bottom
   uniform float mirrorX;   // 0.0 next (peel L←), 1.0 prev (peel →R)
+  uniform float4 fromRect; // contain rect in UV: xy origin, zw size
+  uniform float4 toRect;
 
   const float MIN_AMOUNT = -0.26;
   const float MAX_AMOUNT = 1.15;
@@ -24,8 +26,32 @@ export const PAGE_CURL_SHADER = `
   float2 mapUV(float2 uv){ return orientUV(uv); }
   float2 geomUV(float2 uv){ return orientUV(uv); }
 
-  float4 getFromColor(float2 p){ return fromImg.eval(mapUV(p) * resolution); }
-  float4 getToColor  (float2 p){ return toImg.eval  (mapUV(p) * resolution); }
+  const float3 PAPER = float3(0.980, 0.969, 0.949);
+
+  float4 paperOr(float4 c) {
+    if (c.a < 0.2) return float4(PAPER, 1.0);
+    return float4(mix(PAPER, c.rgb, clamp(c.a, 0.0, 1.0)), 1.0);
+  }
+
+  float2 texUV(float2 p, float4 r) {
+    float2 uv = mapUV(p);
+    return (uv - r.xy) / max(r.zw, float2(0.0001, 0.0001));
+  }
+
+  float4 getFromColor(float2 p) {
+    float2 t = texUV(p, fromRect);
+    if (t.x < 0.0 || t.y < 0.0 || t.x > 1.0 || t.y > 1.0) {
+      return float4(PAPER, 1.0);
+    }
+    return paperOr(fromImg.eval(clamp(t, 0.001, 0.999) * resolution));
+  }
+  float4 getToColor(float2 p) {
+    float2 t = texUV(p, toRect);
+    if (t.x < 0.0 || t.y < 0.0 || t.x > 1.0 || t.y > 1.0) {
+      return float4(PAPER, 1.0);
+    }
+    return paperOr(toImg.eval(clamp(t, 0.001, 0.999) * resolution));
+  }
 
   float3 hitPoint(float hitAngle, float yc, float3 point, float3x3 rrotation){
     float hit = hitAngle / (2.0 * PI);
@@ -65,7 +91,7 @@ export const PAGE_CURL_SHADER = `
     float shadow = (1.0 - distanceToEdge(point) * 30.0) / 3.0;
     if (shadow < 0.0) shadow = 0.0; else shadow *= amount;
     float4 sc = seeThrough(yc, p, rotation, rrotation, cylinderAngle, cylinderRadius);
-    sc.rgb -= shadow;
+    sc.rgb = max(sc.rgb - shadow, float3(0.55, 0.53, 0.50));
     return sc;
   }
 
@@ -89,8 +115,8 @@ export const PAGE_CURL_SHADER = `
     } else {
       shado = 0.0;
     }
-    float3 base = getToColor(p).rgb;
-    return float4(base - shado, 1.0);
+    float3 base = max(getToColor(p).rgb - shado, float3(0.55, 0.53, 0.50));
+    return float4(base, 1.0);
   }
 
   float4 main(float2 xy){
