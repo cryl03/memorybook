@@ -5,10 +5,10 @@ import {
   StyleSheet,
   TouchableOpacity,
   ScrollView,
-  Image,
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { FilterType, FILTERS } from '../types';
+import { FilteredImage } from './FilteredImage';
 
 interface FilterSelectorProps {
   photoUri: string;
@@ -43,20 +43,12 @@ export function FilterSelector({
               styles.filterPreview,
               currentFilter === filter.type && styles.filterPreviewActive,
             ]}>
-              <Image
-                source={{ uri: photoUri }}
+              <FilteredImage
+                uri={photoUri}
+                filter={filter.type}
                 style={styles.filterImage}
                 resizeMode="cover"
               />
-              {filter.type !== 'none' && (
-                <View
-                  style={[
-                    styles.filterOverlay,
-                    { backgroundColor: filter.color },
-                    filter.type === 'bw' && styles.bwFilter,
-                  ]}
-                />
-              )}
             </View>
             <Text
               style={[

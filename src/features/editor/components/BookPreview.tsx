@@ -10,7 +10,8 @@ import {
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { icons } from '@core/assets/icons';
-import { PageData, FILTERS } from '../types';
+import { PageData } from '../types';
+import { FilteredImage } from './FilteredImage';
 
 const { width } = Dimensions.get('window');
 const BOOK_WIDTH = width * 0.7;
@@ -66,19 +67,12 @@ export function BookPreview({
                     page.photos.length === 1 && styles.previewPhotoFull,
                     page.photos.length === 2 && styles.previewPhotoHalf,
                   ]}>
-                  <Image
-                    source={{ uri: photo.uri }}
+                  <FilteredImage
+                    uri={photo.uri}
+                    filter={photo.filter}
                     style={styles.previewImage}
                     resizeMode="cover"
                   />
-                  {photo.filter !== 'none' && (
-                    <View
-                      style={[
-                        styles.filterOverlay,
-                        { backgroundColor: FILTERS.find(f => f.type === photo.filter)?.color || 'transparent' },
-                      ]}
-                    />
-                  )}
                 </View>
               ))}
             </View>

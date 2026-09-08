@@ -44,8 +44,11 @@ export function ProfileScreen({
   const localAlbum = getLocalAlbumSummary(currentAlbum);
   const localAlbumCount = localAlbum ? 1 : 0;
 
-  const displayName = user.name || auth.username || 'Usuario';
+  const displayName = user.name.trim() || 'Usuario';
   const avatarLetter = displayName.charAt(0).toUpperCase();
+  const emailLabel =
+    auth.email ||
+    (auth.username && auth.username.includes('@') ? auth.username : null);
 
   const loadStats = useCallback(async () => {
     if (!auth.isAuthenticated) {
@@ -85,8 +88,8 @@ export function ProfileScreen({
 
       <View style={styles.userSection}>
         <Text style={styles.userName}>{displayName}</Text>
-        {auth.username ? (
-          <Text style={styles.userEmail}>{auth.username}</Text>
+        {emailLabel ? (
+          <Text style={styles.userEmail}>{emailLabel}</Text>
         ) : null}
         <View style={styles.avatar}>
           <Text style={styles.avatarText}>{avatarLetter}</Text>

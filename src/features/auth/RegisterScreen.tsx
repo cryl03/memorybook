@@ -12,6 +12,7 @@ import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
 import { useAppDispatch, useAppSelector } from '@core/store/hooks';
 import { clearAuthError, registerUser } from '@core/store/slices/authSlice';
+import { isValidEmail } from '@core/api/services/authService';
 
 interface RegisterScreenProps {
   onSuccess: () => void;
@@ -22,7 +23,6 @@ interface RegisterScreenProps {
 export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenProps) {
   const dispatch = useAppDispatch();
   const { isLoading, error, isAuthenticated } = useAppSelector(state => state.auth);
-  const [username, setUsername] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
@@ -42,8 +42,14 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
   }, [isAuthenticated]);
 
   const handleRegister = () => {
+    const trimmedEmail = email.trim();
     setValidationError(null);
     dispatch(clearAuthError());
+
+    if (!isValidEmail(trimmedEmail)) {
+      setValidationError('Escribe un correo válido');
+      return;
+    }
 
     if (password !== confirmPassword) {
       setValidationError('Las contraseñas no coinciden');
@@ -57,9 +63,8 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
 
     dispatch(
       registerUser({
-        username: username.trim(),
+        email: trimmedEmail,
         password,
-        email: (email.trim() || username.trim()) || undefined,
       }),
     );
   };
@@ -76,22 +81,12 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
 
       <Text style={styles.title}>Crear cuenta</Text>
       <Text style={styles.subtitle}>
-        Regístrate para guardar tus álbumes y acceder desde cualquier dispositivo.
+        Regístrate con correo y contraseña. Cómo te llamamos lo preguntas después,
+        y puede repetirse.
       </Text>
 
       <View style={styles.form}>
-        <Text style={styles.label}>Usuario</Text>
-        <TextInput
-          value={username}
-          onChangeText={setUsername}
-          autoCapitalize="none"
-          autoCorrect={false}
-          placeholder="tu@email.com"
-          placeholderTextColor={colors.text.secondary}
-          style={styles.input}
-        />
-
-        <Text style={styles.label}>Correo (opcional)</Text>
+        <Text style={styles.label}>Correo</Text>
         <TextInput
           value={email}
           onChangeText={setEmail}
@@ -129,7 +124,7 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
           title="Crear cuenta"
           onPress={handleRegister}
           loading={isLoading}
-          disabled={!username.trim() || !password || !confirmPassword}
+          disabled={!email.trim() || !password || !confirmPassword}
           fullWidth
         />
 

@@ -1,14 +1,14 @@
 import React from 'react';
 import {
   View,
-  Image,
   StyleSheet,
   TouchableOpacity,
   Dimensions,
   Text,
 } from 'react-native';
 import { colors, spacing, borderRadius } from '@core/theme';
-import { LayoutType, PagePhoto, FilterType, FILTERS } from '../types';
+import { LayoutType, PagePhoto } from '../types';
+import { FilteredImage } from './FilteredImage';
 
 const { width } = Dimensions.get('window');
 const GRID_WIDTH = width - spacing.xl * 2;
@@ -27,17 +27,6 @@ export function PhotoGrid({
   onPhotoPress,
   onPhotoLongPress,
 }: PhotoGridProps) {
-  const getFilterOverlay = (filter: FilterType) => {
-    const filterData = FILTERS.find(f => f.type === filter);
-    if (!filterData || filter === 'none') return null;
-    if (filter === 'bw') {
-      return <View style={[styles.filterOverlay, { backgroundColor: 'rgba(0,0,0,0.1)' }]} />;
-    }
-    return (
-      <View style={[styles.filterOverlay, { backgroundColor: filterData.color }]} />
-    );
-  };
-
   const renderPhoto = (photo: PagePhoto, index: number, photoStyle: any) => (
     <TouchableOpacity
       key={`${photo.uri}-${index}`}
@@ -47,12 +36,12 @@ export function PhotoGrid({
       activeOpacity={0.8}
       accessibilityLabel={`Foto ${index + 1}. Mantén presionado para opciones.`}
       accessibilityRole="button">
-      <Image
-        source={{ uri: photo.uri }}
+      <FilteredImage
+        uri={photo.uri}
+        filter={photo.filter}
         style={styles.image}
         resizeMode="cover"
       />
-      {getFilterOverlay(photo.filter)}
     </TouchableOpacity>
   );
 

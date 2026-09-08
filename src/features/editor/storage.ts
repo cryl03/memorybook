@@ -6,6 +6,10 @@ const ALBUM_PAGES_KEY = '@memora_album_pages';
 const ALBUM_TITLE_KEY = '@memora_album_title';
 const COVER_TEXT_PREFIX = '@memora_cover_text:';
 
+function pagesStorageKey(albumKey: string = 'local'): string {
+  return albumKey === 'local' ? ALBUM_PAGES_KEY : `${ALBUM_PAGES_KEY}:${albumKey}`;
+}
+
 const DEFAULT_COVER_PAGE: PageData = {
   id: 'page-cover',
   photos: [],
@@ -49,9 +53,16 @@ export async function loadCoverText(albumKey: string): Promise<string> {
   }
 }
 
-export async function saveAlbumPages(pages: PageData[]): Promise<void> {
+export async function saveAlbumPages(
+  pages: PageData[],
+  albumKey: string = 'local',
+): Promise<void> {
   try {
-    await AsyncStorage.setItem(ALBUM_PAGES_KEY, JSON.stringify(pages));
+    const serialized = JSON.stringify(pages);
+    await AsyncStorage.setItem(pagesStorageKey(albumKey), serialized);
+    if (albumKey !== 'local') {
+      await AsyncStorage.setItem(ALBUM_PAGES_KEY, serialized);
+    }
   } catch (error) {
     console.warn('Error saving album pages:', error);
   }
@@ -64,7 +75,7 @@ export async function persistEditorState(options: {
   albumKey?: string;
 }): Promise<void> {
   const { pages, title, albumKey = 'local' } = options;
-  await saveAlbumPages(pages);
+  await saveAlbumPages(pages, albumKey);
   if (title != null && title.length > 0) {
     await saveAlbumTitle(title);
   }
@@ -75,9 +86,15 @@ export async function persistEditorState(options: {
   }
 }
 
-export async function loadAlbumPages(): Promise<PageData[] | null> {
+export async function loadAlbumPages(
+  albumKey: string = 'local',
+): Promise<PageData[] | null> {
   try {
-    const data = await AsyncStorage.getItem(ALBUM_PAGES_KEY);
+    const data =
+      (await AsyncStorage.getItem(pagesStorageKey(albumKey))) ??
+      (albumKey !== 'local'
+        ? await AsyncStorage.getItem(ALBUM_PAGES_KEY)
+        : null);
     if (data) {
       return JSON.parse(data) as PageData[];
     }
@@ -114,12 +131,21 @@ export async function hasSavedAlbum(): Promise<boolean> {
   }
 }
 
+export async function clearSessionAlbumScratch(): Promise<void> {
+  try {
+    await AsyncStorage.multiRemove([ALBUM_PAGES_KEY, ALBUM_TITLE_KEY]);
+  } catch (error) {
+    console.warn('Error clearing album scratch:', error);
+  }
+}
+
 export async function clearAlbumStorage(): Promise<void> {
   try {
     const keys = await AsyncStorage.getAllKeys();
     const albumKeys = keys.filter(
       key =>
         key === ALBUM_PAGES_KEY ||
+        key.startsWith(`${ALBUM_PAGES_KEY}:`) ||
         key === ALBUM_TITLE_KEY ||
         key.startsWith(COVER_TEXT_PREFIX),
     );
@@ -140,6 +166,6 @@ export async function syncPagesWithPhotos(
     savedPages?.find(page => page.id === 'page-cover') ??
     savedPages?.[0] ??
     DEFAULT_COVER_PAGE;
-  const distributed = distributePhotosToPages(photos, pageCount);
+  const distributed = distributePhotosToPages(photos, pageCount, savedPages ?? undefined);
   await saveAlbumPages([{ ...coverPage, id: 'page-cover' }, ...distributed]);
 }

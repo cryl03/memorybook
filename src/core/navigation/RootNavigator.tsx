@@ -18,14 +18,14 @@ import {
 } from '@core/store/slices/albumSlice';
 import { resolveAlbumMaxPhotos } from '@core/store/albumUtils';
 import { loadSession, saveSession, clearSession } from '@core/storage/sessionStorage';
-import { syncPagesWithPhotos, clearAlbumStorage } from '@features/editor/storage';
-import { openRemoteAlbumForPreview, saveAlbumToCloud, albumNeedsCloudSync, syncLocalAlbumOnAuth, ALLOW_GUEST_FLOW } from '@core/api';
+import { syncPagesWithPhotos, clearAlbumStorage, clearSessionAlbumScratch } from '@features/editor/storage';
+import { openRemoteAlbumForPreview, loadRemoteAlbumForEditor, saveAlbumToCloud, albumNeedsCloudSync, syncLocalAlbumOnAuth, ALLOW_GUEST_FLOW } from '@core/api';
 import { getErrorMessage } from '@core/api/errors';
 import { isLocalAlbumId } from '@core/storage/localAlbum';
 import { logout } from '@core/store/slices/authSlice';
 import { resetUser } from '@core/store/slices/userSlice';
 
-import { SplashScreen } from '@features/splash/SplashScreen';
+import { SplashScreen, type SplashAction } from '@features/splash/SplashScreen';
 import { PresentationScreen } from '@features/onboarding/PresentationScreen';
 import {
   OnboardingChatScreen,
@@ -39,6 +39,7 @@ import { EditorScreen } from '@features/editor/EditorScreen';
 import { CheckoutScreen } from '@features/checkout/CheckoutScreen';
 import { LoginScreen } from '@features/auth/LoginScreen';
 import { RegisterScreen } from '@features/auth/RegisterScreen';
+import { ForgotPasswordScreen } from '@features/auth/ForgotPasswordScreen';
 import { ProfileNavigator } from './ProfileNavigator';
 import { AlbumSyncOverlay } from '@shared/components';
 
@@ -70,21 +71,23 @@ function hasAuthSession(
 
 async function resolveInitialRoute(
   session: Awaited<ReturnType<typeof loadSession>>,
+  action: SplashAction = 'auto',
 ): Promise<keyof RootStackParamList> {
   const signedIn = hasAuthSession(session);
 
-  if (!ALLOW_GUEST_FLOW && !signedIn) {
-    return 'Presentation';
+  if (signedIn) {
+    if (session?.user.isOnboarded) return 'MainTabs';
+    return 'OnboardingChat';
   }
 
-  // Never restore local Editor/Wow. Cloud albums open from Mis álbumes.
-  if (signedIn || session?.user.isOnboarded) return 'MainTabs';
+  if (action === 'create') return 'Login';
   return 'Presentation';
 }
 
 export function RootNavigator() {
   const [showSplash, setShowSplash] = useState(true);
   const [isReady, setIsReady] = useState(false);
+  const [signedIn, setSignedIn] = useState(false);
   const [initialRoute, setInitialRoute] = useState<keyof RootStackParamList>('Presentation');
   const [syncOverlay, setSyncOverlay] = useState({
     visible: false,
@@ -92,6 +95,10 @@ export function RootNavigator() {
     progress: 0,
   });
   const syncInFlightRef = useRef(false);
+  const splashActionRef = useRef<SplashAction>('auto');
+  const sessionRef = useRef<Awaited<ReturnType<typeof loadSession>> | undefined>(
+    undefined,
+  );
   const dispatch = useAppDispatch();
   const user = useAppSelector(state => state.user);
   const album = useAppSelector(state => state.album);
@@ -196,9 +203,14 @@ export function RootNavigator() {
           }
         }
 
-        navigation.navigate(
-          store.getState().user.isOnboarded ? 'MainTabs' : 'OnboardingChat',
-        );
+        const currentUser = store.getState().user;
+        if (!currentUser.name.trim()) {
+          navigation.navigate('OnboardingChat', {
+            nameOnly: currentUser.isOnboarded,
+          });
+          return;
+        }
+        navigation.navigate(currentUser.isOnboarded ? 'MainTabs' : 'OnboardingChat');
       } finally {
         syncInFlightRef.current = false;
       }
@@ -222,7 +234,7 @@ export function RootNavigator() {
 
       const startFresh = async () => {
         dispatch(resetAlbum());
-        await clearAlbumStorage();
+        await clearSessionAlbumScratch();
         navigation.push('OnboardingChat', { skipIntro: true });
       };
 
@@ -274,17 +286,21 @@ export function RootNavigator() {
     [dispatch],
   );
 
-  const handleSplashFinish = useCallback(() => {
+  const handleSplashFinish = useCallback((action: SplashAction) => {
+    splashActionRef.current = action;
+    const session = sessionRef.current;
+    if (session !== undefined) {
+      void resolveInitialRoute(session, action).then(setInitialRoute);
+    }
     setShowSplash(false);
   }, []);
 
   useEffect(() => {
-    if (showSplash) return;
-
     let cancelled = false;
 
     async function bootstrap() {
       const session = await loadSession();
+      sessionRef.current = session;
       if (session) {
         dispatch(hydrateUser(session.user));
         if (session.auth) {
@@ -293,15 +309,16 @@ export function RootNavigator() {
       }
 
       dispatch(resetAlbum());
-      await clearAlbumStorage();
+      await clearSessionAlbumScratch();
       const { user, album, auth } = store.getState();
       await saveSession({ user, album, auth });
       if (session) {
         session.album = { currentAlbum: null, isCreating: false, syncError: null };
       }
 
-      const route = await resolveInitialRoute(session);
+      const route = await resolveInitialRoute(session, splashActionRef.current);
       if (!cancelled) {
+        setSignedIn(hasAuthSession(session));
         setInitialRoute(route);
         setIsReady(true);
       }
@@ -312,10 +329,12 @@ export function RootNavigator() {
     return () => {
       cancelled = true;
     };
-  }, [showSplash, dispatch]);
+  }, [dispatch]);
 
   if (showSplash) {
-    return <SplashScreen onFinish={handleSplashFinish} />;
+    return (
+      <SplashScreen onFinish={handleSplashFinish} autoContinue={signedIn} />
+    );
   }
 
   if (!isReady) {
@@ -358,7 +377,14 @@ export function RootNavigator() {
                 void handleAuthSuccess(navigation);
               }}
               onRegister={() => navigation.navigate('Register')}
+              onForgotPassword={() => navigation.navigate('ForgotPassword')}
             />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="ForgotPassword">
+          {({ navigation }) => (
+            <ForgotPasswordScreen onBack={() => navigation.goBack()} />
           )}
         </Stack.Screen>
 
@@ -377,20 +403,31 @@ export function RootNavigator() {
         <Stack.Screen name="OnboardingChat">
           {({ navigation, route }) => {
             const skipIntro = Boolean(route.params?.skipIntro);
+            const nameOnly = Boolean(route.params?.nameOnly);
             return (
               <OnboardingChatScreen
                 skipIntro={skipIntro}
+                nameOnly={nameOnly}
                 existingName={user.name}
-                onBack={skipIntro ? () => navigation.goBack() : undefined}
+                onBack={
+                  skipIntro || nameOnly ? () => navigation.goBack() : undefined
+                }
                 onComplete={(answers: OnboardingAnswers) => {
+                  const nextName = answers.name || user.name;
                   dispatch(
                     completeOnboarding({
-                      name: answers.name || user.name,
-                      style: answers.style,
-                      story: answers.story,
+                      name: nextName,
+                      style: answers.style || user.preferences.style,
+                      story: answers.story || user.preferences.story,
                     }),
                   );
-                  navigation.navigate('PhotoCount');
+                  if (nameOnly || (user.isOnboarded && !answers.story)) {
+                    navigation.navigate('MainTabs');
+                    return;
+                  }
+                  navigation.navigate('PhotoCount', {
+                    albumTitle: answers.albumTitle,
+                  });
                 }}
               />
             );
@@ -399,14 +436,17 @@ export function RootNavigator() {
 
         {/* Album creation flow */}
         <Stack.Screen name="PhotoCount">
-          {({ navigation }) => (
+          {({ navigation, route }) => (
             <PhotoCountScreen
               onSelect={(count: number) => {
+                const albumTitle =
+                  route.params?.albumTitle?.trim() || 'Mi álbum';
                 dispatch(
                   setAlbumConfig({
                     photoCount: count,
                     style: user.preferences.style,
                     story: user.preferences.story,
+                    title: albumTitle,
                   }),
                 );
                 navigation.navigate('PhotoSelector', { maxPhotos: count });
@@ -448,14 +488,33 @@ export function RootNavigator() {
         <Stack.Screen name="Wow">
           {({ navigation }) => (
             <WowScreen
-              albumTitle={album.currentAlbum?.title || 'Verano en la playa'}
+              albumTitle={album.currentAlbum?.title || 'Mi álbum'}
               onBack={() => navigation.navigate('MainTabs')}
               onBuy={() => navigation.navigate('Checkout')}
               onAddPhotos={() => openAddPhotos(navigation, 'Wow')}
+              onEdit={async () => {
+                const current = store.getState().album.currentAlbum;
+                if (current?.remoteId) {
+                  setSyncOverlay({
+                    visible: true,
+                    step: 'Abriendo editor',
+                    progress: 0.35,
+                  });
+                  try {
+                    await loadRemoteAlbumForEditor(current.remoteId, dispatch);
+                  } finally {
+                    setSyncOverlay({
+                      visible: false,
+                      step: '',
+                      progress: 0,
+                    });
+                  }
+                }
+                navigation.navigate('Editor');
+              }}
               onSave={async () => {
                 const ok = await handlePersistAlbum({
                   showOverlay: true,
-                  silentAlert: true,
                 });
                 if (ok) {
                   navigation.navigate('MainTabs');
@@ -468,14 +527,15 @@ export function RootNavigator() {
         <Stack.Screen name="Editor">
           {({ navigation }) => (
             <EditorScreen
-              albumTitle={album.currentAlbum?.title || 'Verano en la playa'}
+              albumTitle={album.currentAlbum?.title || 'Mi álbum'}
               photoCount={album.currentAlbum?.photos.length || 0}
               pageCount={album.currentAlbum?.pageCount || 28}
               onAddPhotos={() => openAddPhotos(navigation, 'Editor')}
               onSave={async () => {
-                // Local ya flushed en Editor. Ir a perfil ya; sync nube con overlay.
-                navigation.navigate('MainTabs');
-                await handlePersistAlbum({ showOverlay: true });
+                const ok = await handlePersistAlbum({ showOverlay: true });
+                if (ok) {
+                  navigation.navigate('MainTabs');
+                }
               }}
               onBuy={() => navigation.navigate('Checkout')}
               onBack={() => navigation.goBack()}
@@ -486,7 +546,7 @@ export function RootNavigator() {
         <Stack.Screen name="Checkout">
           {({ navigation }) => (
             <CheckoutScreen
-              albumTitle={album.currentAlbum?.title || 'Verano en la playa'}
+              albumTitle={album.currentAlbum?.title || 'Mi álbum'}
               albumDate="15 de mayo del 2026"
               price={300}
               pageCount={album.currentAlbum?.pageCount || 28}
@@ -504,9 +564,7 @@ export function RootNavigator() {
             <ProfileNavigator
               onEditProject={async (projectId, albumSnapshot) => {
                 if (isLocalAlbumId(projectId)) {
-                  if (ALLOW_GUEST_FLOW) {
-                    navigation.navigate('Editor');
-                  }
+                  navigation.navigate('Editor');
                   return;
                 }
                 await openRemoteAlbumForPreview(

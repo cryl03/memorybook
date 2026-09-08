@@ -24,7 +24,8 @@ import Animated, {
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
 import { botImage, onboardingNameBg } from '@core/assets/images';
-import { useAppSelector } from '@core/store/hooks';
+import { useAppDispatch, useAppSelector } from '@core/store/hooks';
+import { setUserName } from '@core/store/slices/userSlice';
 import { albumService, getErrorMessage } from '@core/api';
 import type { StyleSelectorOption } from '@core/api';
 
@@ -34,6 +35,8 @@ interface OnboardingChatScreenProps {
   onComplete: (answers: OnboardingAnswers) => void;
   /** From "Crear nuevo álbum": skip intro + name, start at story/tone. */
   skipIntro?: boolean;
+  /** Returning user without display name: ask name then exit. */
+  nameOnly?: boolean;
   existingName?: string;
   onBack?: () => void;
 }
@@ -42,9 +45,17 @@ export interface OnboardingAnswers {
   name: string;
   story: string;
   style: string;
+  albumTitle?: string;
 }
 
-type Step = 'intro' | 'name' | 'story' | 'storyResponse' | 'style' | 'styleResponse';
+type Step =
+  | 'intro'
+  | 'name'
+  | 'story'
+  | 'storyResponse'
+  | 'style'
+  | 'styleResponse'
+  | 'albumName';
 
 interface ToneOption extends StyleSelectorOption {
   color: string;
@@ -100,13 +111,20 @@ function withToneColor(option: StyleSelectorOption): ToneOption {
 export function OnboardingChatScreen({
   onComplete,
   skipIntro = false,
+  nameOnly = false,
   existingName = '',
   onBack,
 }: OnboardingChatScreenProps) {
+  const dispatch = useAppDispatch();
   const isAuthenticated = useAppSelector(state => state.auth.isAuthenticated);
-  const startAtStory = skipIntro || isAuthenticated;
-  const [step, setStep] = useState<Step>(startAtStory ? 'story' : 'intro');
+  const hasName = Boolean(existingName.trim());
+  const startAtStory = skipIntro && hasName;
+  const startAtName = skipIntro && !hasName;
+  const [step, setStep] = useState<Step>(
+    startAtStory ? 'story' : startAtName ? 'name' : 'intro',
+  );
   const [name, setName] = useState(existingName);
+  const [albumTitle, setAlbumTitle] = useState('');
   const [story, setStory] = useState('');
   const [selectedStyle, setSelectedStyle] = useState('');
   const [showTyping, setShowTyping] = useState(false);
@@ -154,9 +172,14 @@ export function OnboardingChatScreen({
   }, [loadQuestions]);
 
   const handleNameSubmit = () => {
-    if (name.trim()) {
-      setStep('story');
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    dispatch(setUserName(trimmed));
+    if (nameOnly) {
+      onComplete({ name: trimmed, story: '', style: '' });
+      return;
     }
+    setStep('story');
   };
 
   const handleIntroNext = () => {
@@ -185,8 +208,19 @@ export function OnboardingChatScreen({
     }, 1500);
   };
 
-  const handleComplete = () => {
-    onComplete({ name: name.trim() || existingName, story, style: selectedStyle });
+  const handleStyleNext = () => {
+    setStep('albumName');
+  };
+
+  const handleAlbumTitleSubmit = () => {
+    const trimmed = albumTitle.trim();
+    if (!trimmed) return;
+    onComplete({
+      name: name.trim() || existingName,
+      story,
+      style: selectedStyle,
+      albumTitle: trimmed,
+    });
   };
 
   const storyLabel =
@@ -194,9 +228,42 @@ export function OnboardingChatScreen({
   const styleLabel =
     toneOptions.find(option => option.id === selectedStyle)?.label ??
     selectedStyle;
-  const storyTitle = isAuthenticated
-    ? storyQuestion.trim()
-    : storyQuestion.trim() || `¡Hey ${name}!, ¿Qué historia\nquieres comenzar?`;
+  const displayName = name.trim() || existingName.trim();
+  const storyTitle = displayName
+    ? `¡Hey ${displayName}!, ¿Qué historia\nquieres comenzar?`
+    : storyQuestion.trim() || '¿Qué historia\nquieres comenzar?';
+
+  const renderAlbumNameStep = () => (
+    <View style={styles.stepContainer}>
+      <View style={styles.nameTopSection}>
+        <Text style={styles.titleLeft}>Dale un nombre{'\n'}a tu álbum</Text>
+      </View>
+
+      <View style={styles.inputSection}>
+        <Text style={styles.inputLabel}>¿Cómo quieres llamar este álbum?</Text>
+        <View style={styles.inputPill}>
+          <TextInput
+            style={styles.input}
+            value={albumTitle}
+            onChangeText={setAlbumTitle}
+            placeholder="Viaje a Oaxaca"
+            placeholderTextColor="rgba(26, 26, 26, 0.45)"
+            autoFocus
+          />
+        </View>
+      </View>
+
+      <View style={styles.bottomButton}>
+        <Button
+          title="Continuar"
+          onPress={handleAlbumTitleSubmit}
+          disabled={!albumTitle.trim()}
+          style={styles.continueButton}
+          textStyle={styles.continueButtonText}
+        />
+      </View>
+    </View>
+  );
 
   const renderIntroStep = () => (
     <View style={styles.stepContainer}>
@@ -377,7 +444,7 @@ export function OnboardingChatScreen({
 
       {showStyleResponse && (
         <Animated.View entering={FadeInUp.delay(200).duration(400)} style={styles.bottomButton}>
-          <Button title="Continuar" onPress={handleComplete} />
+          <Button title="Continuar" onPress={handleStyleNext} />
         </Animated.View>
       )}
     </View>
@@ -385,7 +452,7 @@ export function OnboardingChatScreen({
 
   return (
     <View style={styles.container}>
-      {step === 'name' ? (
+      {step === 'name' || step === 'albumName' ? (
         renderNameStepBackground()
       ) : (
         <LinearGradient
@@ -394,7 +461,7 @@ export function OnboardingChatScreen({
           style={StyleSheet.absoluteFill}
         />
       )}
-      {skipIntro && onBack ? (
+      {(skipIntro || nameOnly) && onBack ? (
         <TouchableOpacity
           onPress={onBack}
           style={styles.backButton}
@@ -416,6 +483,7 @@ export function OnboardingChatScreen({
           {step === 'name' && renderNameStep()}
           {step === 'story' && renderStoryStep()}
           {step === 'style' && renderStyleStep()}
+          {step === 'albumName' && renderAlbumNameStep()}
         </ScrollView>
       </KeyboardAvoidingView>
     </View>

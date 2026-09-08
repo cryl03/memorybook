@@ -12,18 +12,26 @@ import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
 import { useAppDispatch, useAppSelector } from '@core/store/hooks';
 import { clearAuthError, loginUser } from '@core/store/slices/authSlice';
+import { isValidEmail } from '@core/api/services/authService';
 
 interface LoginScreenProps {
   onSuccess: () => void;
   onBack: () => void;
   onRegister: () => void;
+  onForgotPassword: () => void;
 }
 
-export function LoginScreen({ onSuccess, onBack, onRegister }: LoginScreenProps) {
+export function LoginScreen({
+  onSuccess,
+  onBack,
+  onRegister,
+  onForgotPassword,
+}: LoginScreenProps) {
   const dispatch = useAppDispatch();
   const { isLoading, error, isAuthenticated } = useAppSelector(state => state.auth);
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [validationError, setValidationError] = useState<string | null>(null);
   const authHandledRef = useRef(false);
   const onSuccessRef = useRef(onSuccess);
   onSuccessRef.current = onSuccess;
@@ -39,9 +47,19 @@ export function LoginScreen({ onSuccess, onBack, onRegister }: LoginScreenProps)
   }, [isAuthenticated]);
 
   const handleLogin = () => {
+    const trimmed = email.trim();
+    setValidationError(null);
     dispatch(clearAuthError());
-    dispatch(loginUser({ username: username.trim(), password }));
+
+    if (!isValidEmail(trimmed)) {
+      setValidationError('Escribe un correo válido');
+      return;
+    }
+
+    dispatch(loginUser({ username: trimmed, password }));
   };
+
+  const displayError = validationError ?? error;
 
   return (
     <KeyboardAvoidingView
@@ -53,14 +71,14 @@ export function LoginScreen({ onSuccess, onBack, onRegister }: LoginScreenProps)
 
       <Text style={styles.title}>Iniciar sesión</Text>
       <Text style={styles.subtitle}>
-        Con tu cuenta conectamos con Memora y generamos tu álbum.
+        Entra con tu correo y contraseña. El nombre para saludarte va después.
       </Text>
 
       <View style={styles.form}>
-        <Text style={styles.label}>Usuario</Text>
+        <Text style={styles.label}>Correo</Text>
         <TextInput
-          value={username}
-          onChangeText={setUsername}
+          value={email}
+          onChangeText={setEmail}
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
@@ -79,13 +97,17 @@ export function LoginScreen({ onSuccess, onBack, onRegister }: LoginScreenProps)
           style={styles.input}
         />
 
-        {error ? <Text style={styles.error}>{error}</Text> : null}
+        <TouchableOpacity onPress={onForgotPassword} style={styles.forgotButton}>
+          <Text style={styles.forgotText}>¿Olvidaste tu contraseña?</Text>
+        </TouchableOpacity>
+
+        {displayError ? <Text style={styles.error}>{displayError}</Text> : null}
 
         <Button
           title="Entrar"
           onPress={handleLogin}
           loading={isLoading}
-          disabled={!username.trim() || !password}
+          disabled={!email.trim() || !password}
           fullWidth
         />
 
@@ -142,6 +164,16 @@ const styles = StyleSheet.create({
     color: colors.text.primary,
     backgroundColor: colors.surface,
     marginBottom: spacing.sm,
+  },
+  forgotButton: {
+    alignSelf: 'flex-end',
+    marginTop: -spacing.sm,
+    marginBottom: spacing.xs,
+  },
+  forgotText: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.secondary,
+    textDecorationLine: 'underline',
   },
   error: {
     color: colors.error,

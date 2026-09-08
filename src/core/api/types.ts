@@ -1,12 +1,12 @@
 export interface AuthCredentials {
+  /** API `/auth/` still expects `username`; app sends the email. */
   username: string;
   password: string;
 }
 
 export interface RegisterPayload {
-  username: string;
+  email: string;
   password: string;
-  email?: string;
   first_name?: string;
   last_name?: string;
 }

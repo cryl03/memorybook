@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 import LinearGradient from 'react-native-linear-gradient';
 import { colors, spacing, borderRadius } from '@core/theme';
-import { PageData, PagePhoto, FILTERS } from '../types';
+import { PageData, PagePhoto } from '../types';
+import { FilteredImage } from './FilteredImage';
 
 const { width } = Dimensions.get('window');
 const CONTENT_WIDTH = width - spacing.xl * 2;
@@ -143,8 +144,6 @@ function renderPagePhotos(
   const visibleCount = visiblePhotos.length;
 
   const renderPhoto = (photo: PagePhoto, photoIndex: number, containerStyle: object) => {
-    const filterMeta = FILTERS.find(f => f.type === photo.filter);
-
     return (
       <TouchableOpacity
         key={`${photo.uri}-${photoIndex}`}
@@ -153,16 +152,12 @@ function renderPagePhotos(
         activeOpacity={0.85}
         accessibilityLabel={`Foto ${photoIndex + 1}. Toca para opciones.`}
         accessibilityRole="button">
-        <Image source={{ uri: photo.uri }} style={styles.photoImage} resizeMode="cover" />
-        {photo.filter !== 'none' && filterMeta ? (
-          <View
-            style={[
-              styles.filterOverlay,
-              { backgroundColor: filterMeta.color },
-              photo.filter === 'bw' && styles.bwOverlay,
-            ]}
-          />
-        ) : null}
+        <FilteredImage
+          uri={photo.uri}
+          filter={photo.filter}
+          style={styles.photoImage}
+          resizeMode="cover"
+        />
       </TouchableOpacity>
     );
   };

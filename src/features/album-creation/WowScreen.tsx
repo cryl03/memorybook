@@ -8,6 +8,8 @@ import {
   AlbumPdfFlipbook,
   type AlbumPdfFlipbookHandle,
 } from './AlbumPdfFlipbook';
+import { BookSpreadCurl, buildAlbumViews } from './BookSpreadCurl';
+import type { BookPageCurlHandle } from '../editor/components/BookPageCurl';
 
 const { width } = Dimensions.get('window');
 const OPEN_W = width * 0.92;
@@ -17,7 +19,7 @@ const OPEN_H = PAGE_W * 1.38;
 interface WowScreenProps {
   albumTitle: string;
   onBack?: () => void;
-  onEdit?: () => void;
+  onEdit?: () => void | Promise<void>;
   onBuy: () => void;
   onSave: () => void | Promise<void>;
   onAddPhotos: () => void;
@@ -26,6 +28,7 @@ interface WowScreenProps {
 export function WowScreen({
   albumTitle,
   onBack,
+  onEdit,
   onBuy,
   onSave,
   onAddPhotos,
@@ -43,8 +46,13 @@ export function WowScreen({
   const [pdfFailed, setPdfFailed] = React.useState(false);
   const [isCurling, setIsCurling] = React.useState(false);
   const flipRef = React.useRef<AlbumPdfFlipbookHandle>(null);
+  const photoCurlRef = React.useRef<BookPageCurlHandle>(null);
+  const photoViews = React.useMemo(
+    () => buildAlbumViews(photos.length),
+    [photos.length],
+  );
   const showPdf = Boolean(isAuthenticated && remoteId && !pdfFailed);
-  const photoPageCount = photos.length;
+  const photoPageCount = photoViews.length || photos.length;
   const visiblePageCount = showPdf ? pdfPageCount : photoPageCount;
   const coverUri = showPdf
     ? coverPhoto
@@ -69,9 +77,8 @@ export function WowScreen({
   };
 
   const isClosedSheet =
-    showPdf &&
-    (pdfPageCount <= 1 || pdfPage <= 1 || pdfPage >= pdfPageCount);
-  const bookOpen = showPdf && (!isClosedSheet || isCurling);
+    visiblePageCount <= 1 || pdfPage <= 1 || pdfPage >= visiblePageCount;
+  const bookOpen = visiblePageCount > 1 && (!isClosedSheet || isCurling);
   const pageLabel = !showPdf
     ? visiblePageCount > 0
       ? `${pdfPage} / ${visiblePageCount}`
@@ -128,6 +135,27 @@ export function WowScreen({
               />
             </View>
           </View>
+        ) : photos.length > 0 ? (
+          <View
+            style={[
+              styles.bookClip,
+              bookOpen ? styles.bookClipOpen : styles.bookClipClosed,
+            ]}>
+            <View style={styles.bookInner}>
+              <BookSpreadCurl
+                ref={photoCurlRef}
+                pages={photos}
+                viewIndex={Math.max(0, pdfPage - 1)}
+                views={photoViews}
+                onNext={() =>
+                  setPdfPage(p => Math.min(p + 1, photoPageCount))
+                }
+                onPrev={() => setPdfPage(p => Math.max(1, p - 1))}
+                onCurlStart={() => setIsCurling(true)}
+                onCurlEnd={() => setIsCurling(false)}
+              />
+            </View>
+          </View>
         ) : (
           <View style={styles.bookCover}>
             <View style={styles.bookPhotoFrame}>
@@ -168,6 +196,15 @@ export function WowScreen({
           accessibilityRole="button">
           <Text style={styles.addPhotosText}>Agregar fotos</Text>
         </TouchableOpacity>
+        {onEdit ? (
+          <TouchableOpacity
+            style={styles.addPhotosChip}
+            onPress={() => void onEdit()}
+            accessibilityLabel="Editar álbum"
+            accessibilityRole="button">
+            <Text style={styles.addPhotosText}>Editar</Text>
+          </TouchableOpacity>
+        ) : null}
       </View>
 
       <View style={styles.spacer} />
@@ -178,7 +215,7 @@ export function WowScreen({
           disabled={visiblePageCount <= 1 || pdfPage <= 1}
           onPress={() => {
             if (showPdf) flipRef.current?.goPrev();
-            else setPdfPage(p => Math.max(1, p - 1));
+            else photoCurlRef.current?.goPrev();
           }}
           style={styles.navArrow}
           accessibilityLabel="Página anterior">
@@ -201,7 +238,7 @@ export function WowScreen({
           disabled={visiblePageCount === 0 || pdfPage >= visiblePageCount}
           onPress={() => {
             if (showPdf) flipRef.current?.goNext();
-            else setPdfPage(p => Math.min(visiblePageCount, p + 1));
+            else photoCurlRef.current?.goNext();
           }}
           style={styles.navArrow}
           accessibilityLabel="Página siguiente"

@@ -42,10 +42,11 @@ const albumSlice = createSlice({
         photoCount: number;
         style: string;
         story: string;
+        title?: string;
       }>,
     ) {
       state.currentAlbum = {
-        title: '',
+        title: action.payload.title?.trim() || 'Mi álbum',
         photoCount: action.payload.photoCount,
         maxPhotos: action.payload.photoCount,
         pageCount: pagesForPhotoCount(action.payload.photoCount),
@@ -120,7 +121,7 @@ const albumSlice = createSlice({
       state.isCreating = false;
       if (state.currentAlbum) {
         if (!state.currentAlbum.title) {
-          state.currentAlbum.title = 'Verano en la playa';
+          state.currentAlbum.title = 'Mi álbum';
         }
         state.currentAlbum = normalizeCurrentAlbum(state.currentAlbum);
       }

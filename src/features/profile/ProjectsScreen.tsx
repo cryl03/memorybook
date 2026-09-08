@@ -7,6 +7,7 @@ import {
   ActivityIndicator,
   Image,
   Alert,
+  ScrollView,
 } from 'react-native';
 import { useFocusEffect } from '@react-navigation/native';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
@@ -186,79 +187,81 @@ export function ProjectsScreen({ onBack, onEdit, onCreateNew }: ProjectsScreenPr
         <Text style={styles.createButtonText}>+ Crear nuevo álbum</Text>
       </TouchableOpacity>
 
-      {showGuestProjects && localAlbum ? (
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>En este dispositivo</Text>
-          <LocalProjectCard
-            album={localAlbum}
-            loading={openingId === LOCAL_ALBUM_ID}
-            onPress={() => handleOpenProject(LOCAL_ALBUM_ID)}
-          />
-          <Text style={styles.guestHint}>
-            Inicia sesión para sincronizar este álbum y verlo en otros dispositivos.
+      {auth.isAuthenticated && isLoading ? (
+        <View style={styles.centered}>
+          <ActivityIndicator color={colors.text.primary} />
+        </View>
+      ) : auth.isAuthenticated && error ? (
+        <View style={styles.centered}>
+          <Text style={styles.error}>{error}</Text>
+          <TouchableOpacity onPress={loadProjects}>
+            <Text style={styles.retry}>Reintentar</Text>
+          </TouchableOpacity>
+        </View>
+      ) : auth.isAuthenticated && albums.length === 0 && !showGuestProjects ? (
+        <View style={styles.centered}>
+          <Text style={styles.empty}>Aún no tienes proyectos en la nube.</Text>
+        </View>
+      ) : !auth.isAuthenticated && !showGuestProjects ? (
+        <View style={styles.centered}>
+          <Text style={styles.empty}>
+            Inicia sesión para ver tus álbumes en la nube.
           </Text>
         </View>
-      ) : null}
+      ) : (
+        <ScrollView
+          style={styles.list}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled">
+          {showGuestProjects && localAlbum ? (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>En este dispositivo</Text>
+              <LocalProjectCard
+                album={localAlbum}
+                loading={openingId === LOCAL_ALBUM_ID}
+                onPress={() => handleOpenProject(LOCAL_ALBUM_ID)}
+              />
+              <Text style={styles.guestHint}>
+                Inicia sesión para sincronizar este álbum y verlo en otros dispositivos.
+              </Text>
+            </View>
+          ) : null}
 
-      {auth.isAuthenticated ? (
-        isLoading ? (
-          <View style={styles.centered}>
-            <ActivityIndicator color={colors.text.primary} />
-          </View>
-        ) : error ? (
-          <View style={styles.centered}>
-            <Text style={styles.error}>{error}</Text>
-            <TouchableOpacity onPress={loadProjects}>
-              <Text style={styles.retry}>Reintentar</Text>
-            </TouchableOpacity>
-          </View>
-        ) : albums.length === 0 ? (
-          <View style={styles.centered}>
-            <Text style={styles.empty}>Aún no tienes proyectos en la nube.</Text>
-          </View>
-        ) : (
-          <>
-            {recentProjects.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Editado recientemente</Text>
-                {recentProjects.map(project => (
-                  <ProjectCard
-                    key={project.unique_id}
-                    album={project}
-                    recent
-                    loading={openingId === project.unique_id}
-                    deleting={deletingId === project.unique_id}
-                    onPress={() => handleOpenProject(project.unique_id!, project)}
-                    onDelete={() => handleDeleteProject(project)}
-                  />
-                ))}
-              </View>
-            )}
+          {recentProjects.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Editado recientemente</Text>
+              {recentProjects.map(project => (
+                <ProjectCard
+                  key={project.unique_id}
+                  album={project}
+                  recent
+                  loading={openingId === project.unique_id}
+                  deleting={deletingId === project.unique_id}
+                  onPress={() => handleOpenProject(project.unique_id!, project)}
+                  onDelete={() => handleDeleteProject(project)}
+                />
+              ))}
+            </View>
+          )}
 
-            {otherProjects.length > 0 && (
-              <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Otros proyectos</Text>
-                {otherProjects.map(project => (
-                  <ProjectCard
-                    key={project.unique_id}
-                    album={project}
-                    loading={openingId === project.unique_id}
-                    deleting={deletingId === project.unique_id}
-                    onPress={() => handleOpenProject(project.unique_id!, project)}
-                    onDelete={() => handleDeleteProject(project)}
-                  />
-                ))}
-              </View>
-            )}
-          </>
-        )
-      ) : !showGuestProjects ? (
-        <View style={styles.centered}>
-            <Text style={styles.empty}>
-              Inicia sesión para ver tus álbumes en la nube.
-            </Text>
-        </View>
-      ) : null}
+          {otherProjects.length > 0 && (
+            <View style={styles.section}>
+              <Text style={styles.sectionTitle}>Otros proyectos</Text>
+              {otherProjects.map(project => (
+                <ProjectCard
+                  key={project.unique_id}
+                  album={project}
+                  loading={openingId === project.unique_id}
+                  deleting={deletingId === project.unique_id}
+                  onPress={() => handleOpenProject(project.unique_id!, project)}
+                  onDelete={() => handleDeleteProject(project)}
+                />
+              ))}
+            </View>
+          )}
+        </ScrollView>
+      )}
     </View>
   );
 }
@@ -385,6 +388,13 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.md,
     fontWeight: typography.weights.semibold,
     color: colors.text.inverse,
+  },
+  list: {
+    flex: 1,
+  },
+  listContent: {
+    paddingBottom: spacing['5xl'],
+    flexGrow: 1,
   },
   centered: {
     flex: 1,

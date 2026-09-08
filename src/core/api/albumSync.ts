@@ -98,7 +98,6 @@ export async function syncAlbumToCloud(options: {
   });
 
   const previous = options.remoteFotos ?? {};
-  const missing = options.photoUris.filter(uri => !previous[uri]);
 
   let capacidad: FotosPorPagina | undefined = options.fotosPorPagina;
   const estiloCode =
@@ -124,12 +123,9 @@ export async function syncAlbumToCloud(options: {
     capacidad,
   );
 
-  let pdfUrl: string | undefined;
-  if (missing.length > 0) {
-    options.onProgress?.('Generando álbum', 0.9);
-    const pdf = await albumService.generateAlbumPdf(options.remoteId);
-    pdfUrl = pdf.uri;
-  }
+  options.onProgress?.('Generando álbum', 0.9);
+  const pdf = await albumService.generateAlbumPdf(options.remoteId);
+  const pdfUrl = pdf.uri;
 
   options.onProgress?.('Álbum listo', 1);
   return { remoteFotos, pdfUrl };

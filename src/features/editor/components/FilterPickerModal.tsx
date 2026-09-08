@@ -5,11 +5,11 @@ import {
   StyleSheet,
   Modal,
   TouchableOpacity,
-  Image,
 } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
-import { FilterType, FILTERS } from '../types';
+import { FilterType } from '../types';
 import { FilterSelector } from './FilterSelector';
+import { FilteredImage } from './FilteredImage';
 
 interface FilterPickerModalProps {
   visible: boolean;
@@ -26,8 +26,6 @@ export function FilterPickerModal({
   onSelectFilter,
   onClose,
 }: FilterPickerModalProps) {
-  const active = FILTERS.find(f => f.type === currentFilter);
-
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
       <View style={styles.backdrop}>
@@ -36,16 +34,12 @@ export function FilterPickerModal({
           <Text style={styles.title}>Aplicar filtro</Text>
 
           <View style={styles.previewWrap}>
-            <Image source={{ uri: photoUri }} style={styles.preview} resizeMode="cover" />
-            {currentFilter !== 'none' && active ? (
-              <View
-                style={[
-                  styles.previewOverlay,
-                  { backgroundColor: active.color },
-                  currentFilter === 'bw' && styles.bwOverlay,
-                ]}
-              />
-            ) : null}
+            <FilteredImage
+              uri={photoUri}
+              filter={currentFilter}
+              style={styles.preview}
+              resizeMode="cover"
+            />
           </View>
 
           <FilterSelector

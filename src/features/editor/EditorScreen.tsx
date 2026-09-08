@@ -105,12 +105,18 @@ export function EditorScreen({
 
   const albumKey = album.currentAlbum?.remoteId || 'local';
 
+  useEffect(() => {
+    pagesInitializedRef.current = false;
+    setPages([]);
+    setCurrentPage(0);
+  }, [albumKey]);
+
   // Initialize pages once: load from storage or distribute from photos
   useEffect(() => {
     if (pagesInitializedRef.current) return;
 
     const initPages = async () => {
-      const savedPages = await loadAlbumPages();
+      const savedPages = await loadAlbumPages(albumKey);
       const savedTitle = await loadAlbumTitle();
       const storedCoverText = await loadCoverText(albumKey);
 
@@ -181,7 +187,7 @@ export function EditorScreen({
     }
 
     const reloadPages = async () => {
-      const savedPages = await loadAlbumPages();
+      const savedPages = await loadAlbumPages(albumKey);
       const base = savedPages && savedPages.length > 0 ? savedPages : pages;
       const reconciled = ensureAllPhotosOnPages(base, photos);
       setPages(reconciled);
@@ -380,7 +386,7 @@ export function EditorScreen({
 
       setPages(prev => {
         const next = placePhotosAcrossPages(prev, selected, startPageIndex);
-        void saveAlbumPages(next);
+        void saveAlbumPages(next, albumKey);
         return next;
       });
 

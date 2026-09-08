@@ -28,6 +28,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { PAGE_CURL_SHADER } from '../editor/components/pageCurlShader';
 import type { BookPageCurlHandle } from '../editor/components/BookPageCurl';
+import { arrayBufferToBase64 } from '@core/api/pdfUrl';
 
 const PAPER = '#FAF7F2';
 const FULL_RECT: [number, number, number, number] = [0, 0, 1, 1];
@@ -81,6 +82,20 @@ function decodeDataUrl(dataUrl: string): SkImage | null {
   }
 }
 
+async function decodeUri(uri: string): Promise<SkImage | null> {
+  if (uri.startsWith('data:')) {
+    return decodeDataUrl(uri);
+  }
+  try {
+    const response = await fetch(uri);
+    const bytes = await response.arrayBuffer();
+    const data = Skia.Data.fromBase64(arrayBufferToBase64(bytes));
+    return Skia.Image.MakeImageFromEncoded(data);
+  } catch {
+    return decodeDataUrl(uri);
+  }
+}
+
 function viewUri(
   pages: (string | null)[],
   view: AlbumView | undefined,
@@ -123,6 +138,8 @@ export const BookSpreadCurl = forwardRef<BookPageCurlHandle, BookSpreadCurlProps
     onCurlEndRef.current = onCurlEnd;
 
     const skCache = useRef<Map<string, SkImage>>(new Map());
+    const loadingUris = useRef<Set<string>>(new Set());
+    const [, setCacheTick] = useState(0);
     const fromImage = useSharedValue<SkImage | null>(null);
     const toImage = useSharedValue<SkImage | null>(null);
     const fromRect = useSharedValue<[number, number, number, number]>(FULL_RECT);
@@ -139,13 +156,25 @@ export const BookSpreadCurl = forwardRef<BookPageCurlHandle, BookSpreadCurlProps
 
     const effect = useMemo(() => Skia.RuntimeEffect.Make(PAGE_CURL_SHADER), []);
 
-    const getSk = useCallback((dataUrl: string | null | undefined) => {
-      if (!dataUrl) return null;
-      const cached = skCache.current.get(dataUrl);
+    const getSk = useCallback((uri: string | null | undefined) => {
+      if (!uri) return null;
+      const cached = skCache.current.get(uri);
       if (cached) return cached;
-      const img = decodeDataUrl(dataUrl);
-      if (img) skCache.current.set(dataUrl, img);
-      return img;
+      if (uri.startsWith('data:')) {
+        const img = decodeDataUrl(uri);
+        if (img) skCache.current.set(uri, img);
+        return img;
+      }
+      if (!loadingUris.current.has(uri)) {
+        loadingUris.current.add(uri);
+        void decodeUri(uri).then(img => {
+          loadingUris.current.delete(uri);
+          if (!img) return;
+          skCache.current.set(uri, img);
+          setCacheTick(tick => tick + 1);
+        });
+      }
+      return null;
     }, []);
 
     const destIndex = useCallback(
@@ -177,6 +206,12 @@ export const BookSpreadCurl = forwardRef<BookPageCurlHandle, BookSpreadCurlProps
       open && box.width > 0 ? (box.width - SPINE) / 2 : box.width;
     const paneH = box.height;
     const paneSize = { width: Math.max(paneW, 0), height: Math.max(paneH, 0) };
+
+    useEffect(() => {
+      pages.forEach(uri => {
+        if (uri) getSk(uri);
+      });
+    }, [getSk, pages]);
 
     useEffect(() => {
       canNextSv.value =

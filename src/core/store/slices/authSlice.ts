@@ -1,11 +1,13 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { authService } from '@core/api';
 import { getErrorMessage } from '@core/api/errors';
+import { normalizeEmail } from '@core/api/services/authService';
 import type { AuthCredentials, RegisterPayload } from '@core/api/types';
 
 export interface AuthState {
   token: string | null;
   username: string | null;
+  email: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
   error: string | null;
@@ -14,20 +16,27 @@ export interface AuthState {
 const initialState: AuthState = {
   token: null,
   username: null,
+  email: null,
   isAuthenticated: false,
   isLoading: false,
   error: null,
 };
+
+function sessionFromLogin(email: string, token: string) {
+  const normalized = normalizeEmail(email);
+  return {
+    token,
+    username: normalized,
+    email: normalized,
+  };
+}
 
 export const loginUser = createAsyncThunk(
   'auth/login',
   async (credentials: AuthCredentials, { rejectWithValue }) => {
     try {
       const response = await authService.login(credentials);
-      return {
-        token: response.token,
-        username: credentials.username,
-      };
+      return sessionFromLogin(credentials.username, response.token);
     } catch (error) {
       return rejectWithValue(getErrorMessage(error, 'No se pudo iniciar sesión'));
     }
@@ -39,10 +48,7 @@ export const registerUser = createAsyncThunk(
   async (payload: RegisterPayload, { rejectWithValue }) => {
     try {
       const response = await authService.register(payload);
-      return {
-        token: response.token,
-        username: payload.username,
-      };
+      return sessionFromLogin(payload.email, response.token);
     } catch (error) {
       return rejectWithValue(getErrorMessage(error, 'No se pudo crear la cuenta'));
     }
@@ -56,6 +62,7 @@ const authSlice = createSlice({
     logout(state) {
       state.token = null;
       state.username = null;
+      state.email = null;
       state.isAuthenticated = false;
       state.isLoading = false;
       state.error = null;
@@ -64,7 +71,16 @@ const authSlice = createSlice({
       state.error = null;
     },
     hydrateAuth(_state, action: PayloadAction<AuthState>) {
-      return action.payload;
+      const payload = action.payload;
+      return {
+        ...initialState,
+        ...payload,
+        email:
+          payload.email ??
+          (payload.username && payload.username.includes('@')
+            ? payload.username
+            : null),
+      };
     },
   },
   extraReducers: builder => {
@@ -77,6 +93,7 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.token = action.payload.token;
         state.username = action.payload.username;
+        state.email = action.payload.email;
         state.isAuthenticated = true;
         state.error = null;
       })
@@ -93,6 +110,7 @@ const authSlice = createSlice({
         state.isLoading = false;
         state.token = action.payload.token;
         state.username = action.payload.username;
+        state.email = action.payload.email;
         state.isAuthenticated = true;
         state.error = null;
       })

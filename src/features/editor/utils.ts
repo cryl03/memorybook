@@ -1,4 +1,4 @@
-import { PageData, LayoutType, PagePhoto } from './types';
+import { PageData, LayoutType, PagePhoto, FilterType } from './types';
 
 /**
  * Páginas interiores necesarias con patrón 1 / 2 / 1 / 2 …
@@ -22,6 +22,29 @@ function resolveLayoutFromCount(count: number): LayoutType {
   return 'grid-4';
 }
 
+function filtersByUri(pages?: PageData[]): Map<string, FilterType> {
+  const map = new Map<string, FilterType>();
+  if (!pages) return map;
+  for (const page of pages) {
+    for (const photo of page.photos) {
+      map.set(photo.uri, photo.filter ?? 'none');
+    }
+  }
+  return map;
+}
+
+function pagePhoto(
+  uri: string,
+  order: number,
+  filters: Map<string, FilterType>,
+): PagePhoto {
+  return {
+    uri,
+    filter: filters.get(uri) ?? 'none',
+    order,
+  };
+}
+
 /**
  * Distributes ALL photos across pages (1 then 2 alternating).
  * If pageCount is too small for the slot pattern, pages are added until every photo fits.
@@ -29,7 +52,9 @@ function resolveLayoutFromCount(count: number): LayoutType {
 export function distributePhotosToPages(
   photoUris: string[],
   pageCount: number,
+  previousPages?: PageData[],
 ): PageData[] {
+  const filters = filtersByUri(previousPages);
   const totalPages = Math.max(pageCount, pagesNeededForSlotPattern(photoUris.length));
   const pages: PageData[] = [];
   let photoIndex = 0;
@@ -39,11 +64,7 @@ export function distributePhotosToPages(
     const slotsThisPage = i % 2 === 0 ? 1 : 2;
 
     for (let j = 0; j < slotsThisPage && photoIndex < photoUris.length; j++) {
-      pagePhotos.push({
-        uri: photoUris[photoIndex],
-        filter: 'none',
-        order: j,
-      });
+      pagePhotos.push(pagePhoto(photoUris[photoIndex], j, filters));
       photoIndex++;
     }
 
@@ -60,11 +81,7 @@ export function distributePhotosToPages(
   while (photoIndex < photoUris.length) {
     const pagePhotos: PagePhoto[] = [];
     while (pagePhotos.length < 4 && photoIndex < photoUris.length) {
-      pagePhotos.push({
-        uri: photoUris[photoIndex],
-        filter: 'none',
-        order: pagePhotos.length,
-      });
+      pagePhotos.push(pagePhoto(photoUris[photoIndex], pagePhotos.length, filters));
       photoIndex++;
     }
     pages.push({
@@ -122,6 +139,7 @@ export function redistributePagesWithDesign(
   const oldInterior = pages.filter(
     (p, i) => p.id !== 'page-cover' && i !== coverIndex,
   );
+  const filters = filtersByUri(pages);
 
   const interior: PageData[] = [];
   let photoIndex = 0;
@@ -133,11 +151,7 @@ export function redistributePagesWithDesign(
       pagePhotos.length < slots &&
       photoIndex < photoUris.length
     ) {
-      pagePhotos.push({
-        uri: photoUris[photoIndex],
-        filter: 'none',
-        order: pagePhotos.length,
-      });
+      pagePhotos.push(pagePhoto(photoUris[photoIndex], pagePhotos.length, filters));
       photoIndex += 1;
     }
 
@@ -229,7 +243,7 @@ export function ensureAllPhotosOnPages(
   };
 
   const needed = pagesNeededForSlotPattern(albumPhotoUris.length);
-  const distributed = distributePhotosToPages(albumPhotoUris, needed);
+  const distributed = distributePhotosToPages(albumPhotoUris, needed, pages);
 
   return [coverPage, ...distributed];
 }

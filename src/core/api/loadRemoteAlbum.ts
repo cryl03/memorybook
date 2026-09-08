@@ -2,13 +2,13 @@ import type { AppDispatch } from '@core/store';
 import { resolvePackageCapacity, pagesForPhotoCount } from '@core/store/albumUtils';
 import { loadFromRemote } from '@core/store/slices/albumSlice';
 import {
-  clearAlbumStorage,
+  loadAlbumPages,
   saveAlbumPages,
   saveAlbumTitle,
   loadCoverText,
   saveCoverText,
 } from '@features/editor/storage';
-import { redistributePagesWithDesign } from '@features/editor/utils';
+import { redistributePagesWithDesign, ensureAllPhotosOnPages } from '@features/editor/utils';
 import type { LayoutType, PageData } from '@features/editor/types';
 import { fromEstiloDefault } from './estilo';
 import { albumIdsEqual } from './albumId';
@@ -100,14 +100,20 @@ export async function loadRemoteAlbumForEditor(
     stickers: [],
   };
 
-  const distributed = redistributePagesWithDesign(
-    [],
-    photoUris,
-    fotosPorPagina,
-  ).filter(p => p.id !== 'page-cover');
+  const savedPages = await loadAlbumPages(album.unique_id || albumId);
+  const distributed = savedPages?.length
+    ? ensureAllPhotosOnPages(savedPages, photoUris)
+    : redistributePagesWithDesign(
+        [],
+        photoUris,
+        fotosPorPagina,
+      ).filter(p => p.id !== 'page-cover');
 
-  await clearAlbumStorage();
-  await saveAlbumPages([coverPage, ...distributed]);
+  const pages = savedPages?.length
+    ? distributed
+    : [coverPage, ...distributed.filter(p => p.id !== 'page-cover')];
+
+  await saveAlbumPages(pages, album.unique_id || albumId);
   await saveAlbumTitle(album.nombre);
   if (savedCoverText) {
     const key = album.unique_id || albumId;
