@@ -15,6 +15,7 @@ import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { useAppSelector } from '@core/store/hooks';
 import { albumService } from '@core/api';
 import { getLocalAlbumSummary } from '@core/storage/localAlbum';
+import { countOrders } from '@core/storage/ordersStorage';
 import { APP_VERSION, APP_BUILD } from '@core/config/version';
 
 interface ProfileScreenProps {
@@ -38,6 +39,7 @@ export function ProfileScreen({
 }: ProfileScreenProps) {
   const [notifications, setNotifications] = React.useState(true);
   const [albumCount, setAlbumCount] = useState(0);
+  const [purchaseCount, setPurchaseCount] = useState(0);
   const auth = useAppSelector(state => state.auth);
   const user = useAppSelector(state => state.user);
   const currentAlbum = useAppSelector(state => state.album.currentAlbum);
@@ -51,6 +53,13 @@ export function ProfileScreen({
     (auth.username && auth.username.includes('@') ? auth.username : null);
 
   const loadStats = useCallback(async () => {
+    try {
+      const purchases = await countOrders();
+      setPurchaseCount(purchases);
+    } catch {
+      setPurchaseCount(0);
+    }
+
     if (!auth.isAuthenticated) {
       setAlbumCount(localAlbumCount);
       return;
@@ -103,7 +112,7 @@ export function ProfileScreen({
             </Text>
           </View>
           <View style={styles.statBox}>
-            <Text style={styles.statNumber}>—</Text>
+            <Text style={styles.statNumber}>{purchaseCount}</Text>
             <Text style={styles.statLabel}>Compras</Text>
           </View>
         </View>
@@ -126,7 +135,7 @@ export function ProfileScreen({
         <MenuItem
           icon="badge"
           label="Mis compras"
-          value="—"
+          value={String(purchaseCount)}
           onPress={onNavigateOrders}
         />
         <MenuItem

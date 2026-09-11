@@ -5,35 +5,56 @@ import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
 import { albumService } from '@core/api';
 import { getErrorMessage } from '@core/api/errors';
+import { saveOrder } from '@core/storage/ordersStorage';
+
+const ALBUM_PRICE = 300;
+const STANDARD_DAYS = 14;
+const EXPRESS_DAYS = 5;
 
 interface CheckoutScreenProps {
   albumTitle: string;
-  albumDate: string;
-  price: number;
+  price?: number;
   pageCount: number;
   photoCount: number;
   remoteAlbumId?: string;
+  coverUri?: string | null;
   onBack: () => void;
   onConfirm: () => void;
 }
 
 type ShippingOption = 'estandar' | 'express';
 
+function arrivalDate(days: number): Date {
+  const date = new Date();
+  date.setDate(date.getDate() + days);
+  return date;
+}
+
+function formatArrival(date: Date): string {
+  return date.toLocaleDateString('es-MX', {
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  });
+}
+
 export function CheckoutScreen({
   albumTitle,
-  albumDate,
-  price,
+  price = ALBUM_PRICE,
   pageCount,
   photoCount,
   remoteAlbumId,
+  coverUri,
   onBack,
   onConfirm,
 }: CheckoutScreenProps) {
   const [shipping, setShipping] = useState<ShippingOption>('estandar');
   const [isProcessing, setIsProcessing] = useState(false);
 
+  const shippingDays = shipping === 'express' ? EXPRESS_DAYS : STANDARD_DAYS;
   const shippingCost = shipping === 'express' ? 50 : 0;
   const total = price + shippingCost;
+  const arrival = arrivalDate(shippingDays);
 
   const handleConfirm = async () => {
     if (!remoteAlbumId) {
@@ -49,6 +70,14 @@ export function CheckoutScreen({
     try {
       await albumService.patchAlbum(remoteAlbumId, { nombre: albumTitle });
       await albumService.generateAlbumPdf(remoteAlbumId);
+      await saveOrder({
+        title: albumTitle || 'Mi álbum',
+        estimatedArrival: arrival.toISOString(),
+        price: total,
+        status: 'en_curso',
+        coverUri: coverUri ?? null,
+        albumId: remoteAlbumId,
+      });
 
       Alert.alert(
         'Pedido confirmado',
@@ -71,10 +100,14 @@ export function CheckoutScreen({
       <Text style={styles.title}>Resumen de{'\n'}compra</Text>
 
       <View style={styles.albumCard}>
-        <View style={styles.albumThumb} />
+        {coverUri ? (
+          <Image source={{ uri: coverUri }} style={styles.albumThumb} resizeMode="cover" />
+        ) : (
+          <View style={styles.albumThumb} />
+        )}
         <View style={styles.albumInfo}>
-          <Text style={styles.albumTitle}>{albumTitle}</Text>
-          <Text style={styles.albumDate}>llega el {albumDate}</Text>
+          <Text style={styles.albumTitle}>{albumTitle || 'Mi álbum'}</Text>
+          <Text style={styles.albumDate}>llega el {formatArrival(arrival)}</Text>
         </View>
         <Text style={styles.albumPrice}>${price}</Text>
       </View>
@@ -163,6 +196,7 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.sm,
     backgroundColor: colors.blue.light,
     marginRight: spacing.md,
+    overflow: 'hidden',
   },
   albumInfo: {
     flex: 1,

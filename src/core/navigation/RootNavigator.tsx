@@ -529,7 +529,7 @@ export function RootNavigator() {
             <EditorScreen
               albumTitle={album.currentAlbum?.title || 'Mi álbum'}
               photoCount={album.currentAlbum?.photos.length || 0}
-              pageCount={album.currentAlbum?.pageCount || 28}
+              pageCount={album.currentAlbum?.pageCount || 0}
               onAddPhotos={() => openAddPhotos(navigation, 'Editor')}
               onSave={async () => {
                 const ok = await handlePersistAlbum({ showOverlay: true });
@@ -547,11 +547,10 @@ export function RootNavigator() {
           {({ navigation }) => (
             <CheckoutScreen
               albumTitle={album.currentAlbum?.title || 'Mi álbum'}
-              albumDate="15 de mayo del 2026"
-              price={300}
-              pageCount={album.currentAlbum?.pageCount || 28}
+              pageCount={album.currentAlbum?.pageCount || 0}
               photoCount={album.currentAlbum?.photos.length || 0}
               remoteAlbumId={album.currentAlbum?.remoteId}
+              coverUri={album.currentAlbum?.photos[0]}
               onBack={() => navigation.goBack()}
               onConfirm={() => navigation.navigate('MainTabs')}
             />
