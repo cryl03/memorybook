@@ -11,16 +11,9 @@ import {
   TouchableOpacity,
   Image,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import LinearGradient from 'react-native-linear-gradient';
-import Animated, {
-  useSharedValue,
-  useAnimatedStyle,
-  withTiming,
-  withDelay,
-  Easing,
-  FadeIn,
-  FadeInUp,
-} from 'react-native-reanimated';
+import Animated, { FadeIn, FadeInUp } from 'react-native-reanimated';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
 import { botImage, onboardingNameBg } from '@core/assets/images';
@@ -116,6 +109,7 @@ export function OnboardingChatScreen({
   onBack,
 }: OnboardingChatScreenProps) {
   const dispatch = useAppDispatch();
+  const insets = useSafeAreaInsets();
   const isAuthenticated = useAppSelector(state => state.auth.isAuthenticated);
   const hasName = Boolean(existingName.trim());
   const startAtStory = skipIntro && hasName;
@@ -234,33 +228,38 @@ export function OnboardingChatScreen({
     : storyQuestion.trim() || '¿Qué historia\nquieres comenzar?';
 
   const renderAlbumNameStep = () => (
-    <View style={styles.stepContainer}>
+    <View style={styles.inputStepContainer}>
       <View style={styles.nameTopSection}>
         <Text style={styles.titleLeft}>Dale un nombre{'\n'}a tu álbum</Text>
       </View>
 
-      <View style={styles.inputSection}>
-        <Text style={styles.inputLabel}>¿Cómo quieres llamar este álbum?</Text>
-        <View style={styles.inputPill}>
-          <TextInput
-            style={styles.input}
-            value={albumTitle}
-            onChangeText={setAlbumTitle}
-            placeholder="Viaje a Oaxaca"
-            placeholderTextColor="rgba(26, 26, 26, 0.45)"
-            autoFocus
+      <View style={styles.inputDock}>
+        <View style={styles.inputSection}>
+          <Text style={styles.inputLabel}>¿Cómo quieres llamar este álbum?</Text>
+          <View style={styles.inputPill}>
+            <TextInput
+              style={styles.input}
+              value={albumTitle}
+              onChangeText={setAlbumTitle}
+              placeholder="Viaje a Oaxaca"
+              placeholderTextColor="rgba(26, 26, 26, 0.45)"
+              autoFocus
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={handleAlbumTitleSubmit}
+            />
+          </View>
+        </View>
+
+        <View style={[styles.bottomButton, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+          <Button
+            title="Continuar"
+            onPress={handleAlbumTitleSubmit}
+            disabled={!albumTitle.trim()}
+            style={styles.continueButton}
+            textStyle={styles.continueButtonText}
           />
         </View>
-      </View>
-
-      <View style={styles.bottomButton}>
-        <Button
-          title="Continuar"
-          onPress={handleAlbumTitleSubmit}
-          disabled={!albumTitle.trim()}
-          style={styles.continueButton}
-          textStyle={styles.continueButtonText}
-        />
       </View>
     </View>
   );
@@ -294,33 +293,38 @@ export function OnboardingChatScreen({
   );
 
   const renderNameStep = () => (
-    <View style={styles.stepContainer}>
+    <View style={styles.inputStepContainer}>
       <View style={styles.nameTopSection}>
         <Text style={styles.titleLeft}>Para crear algo{'\n'}hecho para ti</Text>
       </View>
 
-      <View style={styles.inputSection}>
-        <Text style={styles.inputLabel}>¿Cómo prefieres que te llame?</Text>
-        <View style={styles.inputPill}>
-          <TextInput
-            style={styles.input}
-            value={name}
-            onChangeText={setName}
-            placeholder="Sam"
-            placeholderTextColor="rgba(26, 26, 26, 0.45)"
-            autoFocus
+      <View style={styles.inputDock}>
+        <View style={styles.inputSection}>
+          <Text style={styles.inputLabel}>¿Cómo prefieres que te llame?</Text>
+          <View style={styles.inputPill}>
+            <TextInput
+              style={styles.input}
+              value={name}
+              onChangeText={setName}
+              placeholder="Sam"
+              placeholderTextColor="rgba(26, 26, 26, 0.45)"
+              autoFocus
+              returnKeyType="done"
+              blurOnSubmit
+              onSubmitEditing={handleNameSubmit}
+            />
+          </View>
+        </View>
+
+        <View style={[styles.bottomButton, { paddingBottom: Math.max(insets.bottom, spacing.lg) }]}>
+          <Button
+            title="Continuar"
+            onPress={handleNameSubmit}
+            disabled={!name.trim()}
+            style={styles.continueButton}
+            textStyle={styles.continueButtonText}
           />
         </View>
-      </View>
-
-      <View style={styles.bottomButton}>
-        <Button
-          title="Continuar"
-          onPress={handleNameSubmit}
-          disabled={!name.trim()}
-          style={styles.continueButton}
-          textStyle={styles.continueButtonText}
-        />
       </View>
     </View>
   );
@@ -473,18 +477,20 @@ export function OnboardingChatScreen({
       <KeyboardAvoidingView
         style={styles.flex}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}>
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-          keyboardDismissMode="interactive">
-          {step === 'intro' && renderIntroStep()}
-          {step === 'name' && renderNameStep()}
-          {step === 'story' && renderStoryStep()}
-          {step === 'style' && renderStyleStep()}
-          {step === 'albumName' && renderAlbumNameStep()}
-        </ScrollView>
+        keyboardVerticalOffset={Platform.OS === 'ios' ? insets.top : 0}>
+        {step === 'name' || step === 'albumName' ? (
+          step === 'name' ? renderNameStep() : renderAlbumNameStep()
+        ) : (
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+            keyboardDismissMode="interactive">
+            {step === 'intro' && renderIntroStep()}
+            {step === 'story' && renderStoryStep()}
+            {step === 'style' && renderStyleStep()}
+          </ScrollView>
+        )}
       </KeyboardAvoidingView>
     </View>
   );
@@ -518,6 +524,13 @@ const styles = StyleSheet.create({
     minHeight: height,
     justifyContent: 'space-between',
     paddingBottom: spacing['3xl'],
+  },
+  inputStepContainer: {
+    flex: 1,
+    justifyContent: 'space-between',
+  },
+  inputDock: {
+    width: '100%',
   },
   topSection: {
     alignItems: 'center',
@@ -574,8 +587,7 @@ const styles = StyleSheet.create({
   // Input section (name step)
   inputSection: {
     paddingHorizontal: spacing['3xl'],
-    marginTop: 'auto',
-    marginBottom: spacing['3xl'],
+    marginBottom: spacing.md,
     zIndex: 1,
   },
   inputLabel: {

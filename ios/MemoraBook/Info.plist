@@ -35,6 +35,10 @@
 	<string>Necesitamos tu ubicación para agregarla a las páginas de tu álbum.</string>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Necesitamos acceso a tu galería para seleccionar fotos para tu álbum.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Necesitamos acceso a tu galería para seleccionar fotos para tu álbum.</string>
+	<key>PHPhotoLibraryPreventAutomaticLimitedAccessAlert</key>
+	<true/>
 	<key>RCTNewArchEnabled</key>
 	<true/>
 	<key>UILaunchStoryboardName</key>

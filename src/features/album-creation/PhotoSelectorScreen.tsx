@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -7,13 +7,21 @@ import {
   TouchableOpacity,
   Dimensions,
   Image,
-  Platform,
-  PermissionsAndroid,
   Alert,
 } from 'react-native';
 import { CameraRoll } from '@react-native-camera-roll/camera-roll';
 import { icons } from '@core/assets/icons';
 import { colors, typography, spacing } from '@core/theme';
+import { AlbumPickerModal } from '@core/gallery/AlbumPickerModal';
+import {
+  RECENTS_ALBUM,
+  buildGetPhotosParams,
+  loadGalleryAlbums,
+  openPhotoSettings,
+  refreshLimitedPhotoSelection,
+  requestPhotoLibraryAccess,
+  type GalleryAlbumOption,
+} from '@core/gallery/photoLibrary';
 
 const { width } = Dimensions.get('window');
 const COLUMNS = 4;
@@ -32,24 +40,6 @@ interface GalleryPhoto {
   uri: string;
 }
 
-async function requestPermission(): Promise<boolean> {
-  if (Platform.OS === 'android') {
-    const version = Platform.Version;
-    if (version >= 33) {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
-    } else {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
-    }
-  }
-  return true; // iOS handles permissions via Info.plist
-}
-
 export function PhotoSelectorScreen({
   maxPhotos,
   existingPhotos = [],
@@ -59,42 +49,32 @@ export function PhotoSelectorScreen({
   const [selectedPhotos, setSelectedPhotos] = useState<string[]>([]);
   const [photos, setPhotos] = useState<GalleryPhoto[]>([]);
   const [hasPermission, setHasPermission] = useState(false);
+  const [limitedAccess, setLimitedAccess] = useState(false);
   const [endCursor, setEndCursor] = useState<string | undefined>(undefined);
   const [hasMore, setHasMore] = useState(true);
+  const [albums, setAlbums] = useState<GalleryAlbumOption[]>([RECENTS_ALBUM]);
+  const [selectedAlbum, setSelectedAlbum] = useState<GalleryAlbumOption>(RECENTS_ALBUM);
+  const [albumPickerOpen, setAlbumPickerOpen] = useState(false);
+  const selectedAlbumRef = useRef(selectedAlbum);
+  selectedAlbumRef.current = selectedAlbum;
 
-  useEffect(() => {
-    loadPhotos();
-  }, []);
-
-  const loadPhotos = async () => {
-    const granted = await requestPermission();
-    if (!granted) {
-      Alert.alert(
-        'Permiso requerido',
-        'Necesitamos acceso a tu galería para seleccionar fotos.',
-      );
-      return;
-    }
-    setHasPermission(true);
-    fetchPhotos();
-  };
-
-  const fetchPhotos = async (after?: string) => {
+  const fetchPhotos = useCallback(async (after?: string, album = selectedAlbumRef.current) => {
     try {
-      const result = await CameraRoll.getPhotos({
-        first: 60,
-        after,
-        assetType: 'Photos',
-        include: ['filename'],
-      });
+      const result = await CameraRoll.getPhotos(buildGetPhotosParams(album, after));
+      if (result.limited) {
+        setLimitedAccess(true);
+      }
 
-      const newPhotos: GalleryPhoto[] = result.edges.map((edge, index) => ({
-        id: edge.node.image.uri,
+      const newPhotos: GalleryPhoto[] = result.edges.map(edge => ({
+        id: edge.node.id || edge.node.image.uri,
         uri: edge.node.image.uri,
       }));
 
       if (after) {
-        setPhotos(prev => [...prev, ...newPhotos]);
+        setPhotos(prev => {
+          const seen = new Set(prev.map(p => p.id));
+          return [...prev, ...newPhotos.filter(p => !seen.has(p.id))];
+        });
       } else {
         setPhotos(newPhotos);
       }
@@ -104,11 +84,60 @@ export function PhotoSelectorScreen({
     } catch (error) {
       console.warn('Error loading photos:', error);
     }
+  }, []);
+
+  const loadLibrary = useCallback(async () => {
+    const { granted, limited } = await requestPhotoLibraryAccess();
+    if (!granted) {
+      Alert.alert(
+        'Permiso requerido',
+        'Necesitamos acceso a tu galería para seleccionar fotos.',
+      );
+      return;
+    }
+    setHasPermission(true);
+    setLimitedAccess(limited);
+    const nextAlbums = await loadGalleryAlbums();
+    setAlbums(nextAlbums);
+    await fetchPhotos(undefined, selectedAlbumRef.current);
+  }, [fetchPhotos]);
+
+  useEffect(() => {
+    void loadLibrary();
+  }, [loadLibrary]);
+
+  const handleSelectAlbum = (album: GalleryAlbumOption) => {
+    setSelectedAlbum(album);
+    setAlbumPickerOpen(false);
+    setPhotos([]);
+    setEndCursor(undefined);
+    setHasMore(true);
+    void fetchPhotos(undefined, album);
+  };
+
+  const handleLimitedAccess = () => {
+    Alert.alert(
+      'Acceso limitado a fotos',
+      'iOS solo muestra las fotos que elegiste (WhatsApp, capturas). Para ver Cámara y tus carpetas, permite todas las fotos o elige más.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Elegir más fotos',
+          onPress: () => {
+            void (async () => {
+              await refreshLimitedPhotoSelection();
+              await loadLibrary();
+            })();
+          },
+        },
+        { text: 'Abrir Ajustes', onPress: openPhotoSettings },
+      ],
+    );
   };
 
   const loadMore = () => {
     if (hasMore && endCursor) {
-      fetchPhotos(endCursor);
+      void fetchPhotos(endCursor);
     }
   };
 
@@ -163,7 +192,6 @@ export function PhotoSelectorScreen({
 
   return (
     <View style={styles.container}>
-      {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={onClose} style={styles.closeButton}>
           <Text style={{ fontSize: 24, color: colors.text.primary }}>✕</Text>
@@ -184,17 +212,33 @@ export function PhotoSelectorScreen({
         </TouchableOpacity>
       </View>
 
-      {/* Album selector */}
-      <TouchableOpacity style={styles.albumSelector}>
-        <Text style={styles.albumName}>Recientes</Text>
+      <TouchableOpacity
+        style={styles.albumSelector}
+        onPress={() => setAlbumPickerOpen(true)}
+        accessibilityRole="button"
+        accessibilityLabel={`Álbum ${selectedAlbum.title}. Toca para cambiar`}>
+        <Text style={styles.albumName}>{selectedAlbum.title}</Text>
         <Image
-          source={icons['arrow-right']}
-          style={{ width: 16, height: 16, tintColor: colors.text.secondary }}
+          source={icons['arrow-down']}
+          style={{
+            width: 16,
+            height: 16,
+            tintColor: colors.text.secondary,
+            transform: [{ rotate: albumPickerOpen ? '180deg' : '0deg' }],
+          }}
           resizeMode="contain"
         />
       </TouchableOpacity>
 
-      {/* Counter */}
+      {limitedAccess ? (
+        <TouchableOpacity style={styles.limitedBanner} onPress={handleLimitedAccess}>
+          <Text style={styles.limitedText}>
+            Solo ves algunas fotos. Toca para elegir Cámara y tus carpetas, o
+            permitir acceso completo.
+          </Text>
+        </TouchableOpacity>
+      ) : null}
+
       <View style={styles.counterContainer}>
         <Text style={styles.counterText}>
           {isAppendMode
@@ -203,7 +247,6 @@ export function PhotoSelectorScreen({
         </Text>
       </View>
 
-      {/* Photo grid */}
       {hasPermission ? (
         <FlatList
           data={photos}
@@ -222,6 +265,14 @@ export function PhotoSelectorScreen({
           </Text>
         </View>
       )}
+
+      <AlbumPickerModal
+        visible={albumPickerOpen}
+        albums={albums}
+        selectedId={selectedAlbum.id}
+        onSelect={handleSelectAlbum}
+        onClose={() => setAlbumPickerOpen(false)}
+      />
     </View>
   );
 }
@@ -267,6 +318,19 @@ const styles = StyleSheet.create({
     fontSize: typography.sizes.md,
     fontWeight: typography.weights.medium,
     color: colors.text.primary,
+  },
+  limitedBanner: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: 10,
+    backgroundColor: colors.accent.peach,
+  },
+  limitedText: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.primary,
+    lineHeight: typography.sizes.sm * typography.lineHeights.relaxed,
   },
   counterContainer: {
     paddingHorizontal: spacing.lg,

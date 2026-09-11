@@ -1,15 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
-import { Button } from '@shared/components';
+import { Button, KeyboardSafeScreen } from '@shared/components';
 import { useAppDispatch, useAppSelector } from '@core/store/hooks';
 import { clearAuthError, registerUser } from '@core/store/slices/authSlice';
 import { isValidEmail } from '@core/api/services/authService';
@@ -72,9 +64,7 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
   const displayError = validationError ?? error;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardSafeScreen>
       <TouchableOpacity onPress={onBack} style={styles.backButton}>
         <Text style={styles.backText}>Volver</Text>
       </TouchableOpacity>
@@ -96,6 +86,7 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
           placeholder="tu@email.com"
           placeholderTextColor={colors.text.secondary}
           style={styles.input}
+          returnKeyType="next"
         />
 
         <Text style={styles.label}>Contraseña</Text>
@@ -106,6 +97,7 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
           placeholder="••••••••"
           placeholderTextColor={colors.text.secondary}
           style={styles.input}
+          returnKeyType="next"
         />
 
         <Text style={styles.label}>Confirmar contraseña</Text>
@@ -116,6 +108,8 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
           placeholder="••••••••"
           placeholderTextColor={colors.text.secondary}
           style={styles.input}
+          returnKeyType="go"
+          onSubmitEditing={handleRegister}
         />
 
         {displayError ? <Text style={styles.error}>{displayError}</Text> : null}
@@ -132,17 +126,11 @@ export function RegisterScreen({ onSuccess, onBack, onLogin }: RegisterScreenPro
           <Text style={styles.linkText}>¿Ya tienes cuenta? Inicia sesión</Text>
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardSafeScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing['3xl'],
-  },
   backButton: {
     marginBottom: spacing.xl,
   },

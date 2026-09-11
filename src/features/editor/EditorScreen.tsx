@@ -700,6 +700,7 @@ export function EditorScreen({
         style={styles.contentScroll}
         showsVerticalScrollIndicator={false}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets
         contentContainerStyle={styles.contentInner}>
         {renderBookPreview()}
         {!isCoverPage ? (

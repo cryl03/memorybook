@@ -1,15 +1,7 @@
 import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
-import { Button } from '@shared/components';
+import { Button, KeyboardSafeScreen } from '@shared/components';
 import { authService } from '@core/api';
 import { getErrorMessage } from '@core/api/errors';
 import { isValidEmail } from '@core/api/services/authService';
@@ -45,9 +37,7 @@ export function ForgotPasswordScreen({ onBack }: ForgotPasswordScreenProps) {
   };
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardSafeScreen>
       <TouchableOpacity onPress={onBack} style={styles.backButton}>
         <Text style={styles.backText}>Volver</Text>
       </TouchableOpacity>
@@ -78,6 +68,8 @@ export function ForgotPasswordScreen({ onBack }: ForgotPasswordScreenProps) {
             placeholder="tu@email.com"
             placeholderTextColor={colors.text.secondary}
             style={styles.input}
+            returnKeyType="go"
+            onSubmitEditing={() => void handleSubmit()}
           />
 
           {error ? <Text style={styles.error}>{error}</Text> : null}
@@ -91,17 +83,11 @@ export function ForgotPasswordScreen({ onBack }: ForgotPasswordScreenProps) {
           />
         </View>
       )}
-    </KeyboardAvoidingView>
+    </KeyboardSafeScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing['3xl'],
-  },
   backButton: {
     marginBottom: spacing.xl,
   },

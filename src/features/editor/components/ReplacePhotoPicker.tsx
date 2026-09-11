@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import {
   View,
   Text,
@@ -8,13 +8,22 @@ import {
   TouchableOpacity,
   Image,
   Dimensions,
-  Platform,
-  PermissionsAndroid,
   Alert,
   ActivityIndicator,
 } from 'react-native';
 import { CameraRoll } from '@react-native-camera-roll/camera-roll';
+import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
+import { AlbumPickerModal } from '@core/gallery/AlbumPickerModal';
+import {
+  RECENTS_ALBUM,
+  buildGetPhotosParams,
+  loadGalleryAlbums,
+  openPhotoSettings,
+  refreshLimitedPhotoSelection,
+  requestPhotoLibraryAccess,
+  type GalleryAlbumOption,
+} from '@core/gallery/photoLibrary';
 
 const { width } = Dimensions.get('window');
 const COLUMNS = 3;
@@ -37,23 +46,6 @@ interface GalleryPhoto {
   uri: string;
 }
 
-async function requestPermission(): Promise<boolean> {
-  if (Platform.OS === 'android') {
-    const version = Number(Platform.Version);
-    if (version >= 33) {
-      const granted = await PermissionsAndroid.request(
-        PermissionsAndroid.PERMISSIONS.READ_MEDIA_IMAGES,
-      );
-      return granted === PermissionsAndroid.RESULTS.GRANTED;
-    }
-    const granted = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.READ_EXTERNAL_STORAGE,
-    );
-    return granted === PermissionsAndroid.RESULTS.GRANTED;
-  }
-  return true;
-}
-
 export function ReplacePhotoPicker({
   visible,
   onClose,
@@ -68,21 +60,30 @@ export function ReplacePhotoPicker({
   const [endCursor, setEndCursor] = useState<string | undefined>();
   const [hasMore, setHasMore] = useState(true);
   const [selectedUris, setSelectedUris] = useState<string[]>([]);
+  const [limitedAccess, setLimitedAccess] = useState(false);
+  const [albums, setAlbums] = useState<GalleryAlbumOption[]>([RECENTS_ALBUM]);
+  const [selectedAlbum, setSelectedAlbum] = useState<GalleryAlbumOption>(RECENTS_ALBUM);
+  const [albumPickerOpen, setAlbumPickerOpen] = useState(false);
+  const selectedAlbumRef = useRef(selectedAlbum);
+  selectedAlbumRef.current = selectedAlbum;
 
-  const fetchPhotos = useCallback(async (after?: string) => {
+  const fetchPhotos = useCallback(async (after?: string, album = selectedAlbumRef.current) => {
     try {
-      const result = await CameraRoll.getPhotos({
-        first: 48,
-        after,
-        assetType: 'Photos',
-      });
+      const result = await CameraRoll.getPhotos(buildGetPhotosParams(album, after, 48));
+      if (result.limited) {
+        setLimitedAccess(true);
+      }
 
       const next: GalleryPhoto[] = result.edges.map(edge => ({
-        id: edge.node.image.uri,
+        id: edge.node.id || edge.node.image.uri,
         uri: edge.node.image.uri,
       }));
 
-      setPhotos(prev => (after ? [...prev, ...next] : next));
+      setPhotos(prev => {
+        if (!after) return next;
+        const seen = new Set(prev.map(p => p.id));
+        return [...prev, ...next.filter(p => !seen.has(p.id))];
+      });
       setEndCursor(result.page_info.end_cursor);
       setHasMore(result.page_info.has_next_page);
     } catch (error) {
@@ -91,36 +92,73 @@ export function ReplacePhotoPicker({
     }
   }, []);
 
+  const loadLibrary = useCallback(async () => {
+    setIsLoading(true);
+    const { granted, limited } = await requestPhotoLibraryAccess();
+    if (!granted) {
+      Alert.alert('Permiso requerido', permissionMessage);
+      setIsLoading(false);
+      onClose();
+      return;
+    }
+
+    setLimitedAccess(limited);
+    const nextAlbums = await loadGalleryAlbums();
+    setAlbums(nextAlbums);
+    await fetchPhotos(undefined, selectedAlbumRef.current);
+    setIsLoading(false);
+  }, [fetchPhotos, onClose, permissionMessage]);
+
   useEffect(() => {
     if (!visible) {
       setSelectedUris([]);
+      setSelectedAlbum(RECENTS_ALBUM);
+      setAlbumPickerOpen(false);
       return;
     }
 
     let cancelled = false;
 
     const load = async () => {
-      setIsLoading(true);
-      const granted = await requestPermission();
+      await loadLibrary();
       if (cancelled) return;
-
-      if (!granted) {
-        Alert.alert('Permiso requerido', permissionMessage);
-        setIsLoading(false);
-        onClose();
-        return;
-      }
-
-      await fetchPhotos();
-      if (!cancelled) setIsLoading(false);
     };
 
-    load();
+    void load();
 
     return () => {
       cancelled = true;
     };
-  }, [visible, fetchPhotos, onClose, permissionMessage]);
+  }, [visible, loadLibrary]);
+
+  const handleSelectAlbum = (album: GalleryAlbumOption) => {
+    setSelectedAlbum(album);
+    setAlbumPickerOpen(false);
+    setPhotos([]);
+    setEndCursor(undefined);
+    setHasMore(true);
+    void fetchPhotos(undefined, album);
+  };
+
+  const handleLimitedAccess = () => {
+    Alert.alert(
+      'Acceso limitado a fotos',
+      'iOS solo muestra las fotos que elegiste. Para ver Cámara y tus carpetas, permite todas las fotos o elige más.',
+      [
+        { text: 'Cancelar', style: 'cancel' },
+        {
+          text: 'Elegir más fotos',
+          onPress: () => {
+            void (async () => {
+              await refreshLimitedPhotoSelection();
+              await loadLibrary();
+            })();
+          },
+        },
+        { text: 'Abrir Ajustes', onPress: openPhotoSettings },
+      ],
+    );
+  };
 
   const toggleUri = (uri: string) => {
     setSelectedUris(prev => {
@@ -172,6 +210,27 @@ export function ReplacePhotoPicker({
           </TouchableOpacity>
         </View>
 
+        <TouchableOpacity
+          style={styles.albumSelector}
+          onPress={() => setAlbumPickerOpen(true)}
+          accessibilityRole="button"
+          accessibilityLabel={`Álbum ${selectedAlbum.title}. Toca para cambiar`}>
+          <Text style={styles.albumName}>{selectedAlbum.title}</Text>
+          <Image
+            source={icons['arrow-down']}
+            style={{ width: 14, height: 14, tintColor: colors.text.secondary }}
+            resizeMode="contain"
+          />
+        </TouchableOpacity>
+
+        {limitedAccess ? (
+          <TouchableOpacity style={styles.limitedBanner} onPress={handleLimitedAccess}>
+            <Text style={styles.limitedText}>
+              Solo ves algunas fotos. Toca para elegir Cámara y tus carpetas.
+            </Text>
+          </TouchableOpacity>
+        ) : null}
+
         {isLoading && photos.length === 0 ? (
           <View style={styles.centered}>
             <ActivityIndicator color={colors.text.primary} />
@@ -184,7 +243,7 @@ export function ReplacePhotoPicker({
             columnWrapperStyle={styles.row}
             contentContainerStyle={styles.list}
             onEndReached={() => {
-              if (hasMore && endCursor) fetchPhotos(endCursor);
+              if (hasMore && endCursor) void fetchPhotos(endCursor);
             }}
             onEndReachedThreshold={0.4}
             renderItem={({ item }) => {
@@ -205,6 +264,14 @@ export function ReplacePhotoPicker({
             }}
           />
         )}
+
+        <AlbumPickerModal
+          visible={albumPickerOpen}
+          albums={albums}
+          selectedId={selectedAlbum.id}
+          onSelect={handleSelectAlbum}
+          onClose={() => setAlbumPickerOpen(false)}
+        />
       </View>
     </Modal>
   );
@@ -221,7 +288,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: spacing.xl,
-    paddingBottom: spacing.lg,
+    paddingBottom: spacing.md,
   },
   headerCenter: {
     alignItems: 'center',
@@ -249,6 +316,31 @@ const styles = StyleSheet.create({
   },
   confirmDisabled: {
     color: colors.text.tertiary,
+  },
+  albumSelector: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: spacing.xl,
+    paddingBottom: spacing.sm,
+    gap: spacing.xs,
+  },
+  albumName: {
+    fontSize: typography.sizes.md,
+    fontWeight: typography.weights.medium,
+    color: colors.text.primary,
+  },
+  limitedBanner: {
+    marginHorizontal: spacing.xl,
+    marginBottom: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: borderRadius.md,
+    backgroundColor: colors.accent.peach,
+  },
+  limitedText: {
+    fontSize: typography.sizes.sm,
+    color: colors.text.primary,
+    lineHeight: typography.sizes.sm * typography.lineHeights.relaxed,
   },
   centered: {
     flex: 1,

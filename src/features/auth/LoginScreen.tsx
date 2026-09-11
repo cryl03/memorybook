@@ -1,15 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  TextInput,
-  KeyboardAvoidingView,
-  Platform,
-  TouchableOpacity,
-} from 'react-native';
+import { View, Text, StyleSheet, TextInput, TouchableOpacity } from 'react-native';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
-import { Button } from '@shared/components';
+import { Button, KeyboardSafeScreen } from '@shared/components';
 import { useAppDispatch, useAppSelector } from '@core/store/hooks';
 import { clearAuthError, loginUser } from '@core/store/slices/authSlice';
 import { isValidEmail } from '@core/api/services/authService';
@@ -62,9 +54,7 @@ export function LoginScreen({
   const displayError = validationError ?? error;
 
   return (
-    <KeyboardAvoidingView
-      style={styles.container}
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
+    <KeyboardSafeScreen>
       <TouchableOpacity onPress={onBack} style={styles.backButton}>
         <Text style={styles.backText}>Volver</Text>
       </TouchableOpacity>
@@ -85,6 +75,7 @@ export function LoginScreen({
           placeholder="tu@email.com"
           placeholderTextColor={colors.text.secondary}
           style={styles.input}
+          returnKeyType="next"
         />
 
         <Text style={styles.label}>Contraseña</Text>
@@ -95,6 +86,8 @@ export function LoginScreen({
           placeholder="••••••••"
           placeholderTextColor={colors.text.secondary}
           style={styles.input}
+          returnKeyType="go"
+          onSubmitEditing={handleLogin}
         />
 
         <TouchableOpacity onPress={onForgotPassword} style={styles.forgotButton}>
@@ -115,17 +108,11 @@ export function LoginScreen({
           <Text style={styles.linkText}>¿No tienes cuenta? Crear una</Text>
         </TouchableOpacity>
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardSafeScreen>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.xl,
-    paddingTop: spacing['3xl'],
-  },
   backButton: {
     marginBottom: spacing.xl,
   },
