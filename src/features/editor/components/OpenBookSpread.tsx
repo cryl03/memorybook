@@ -11,12 +11,13 @@ import LinearGradient from 'react-native-linear-gradient';
 import { colors, spacing, borderRadius } from '@core/theme';
 import { PageData, PagePhoto } from '../types';
 import { FilteredImage } from './FilteredImage';
+import {
+  getEditorBookMetrics,
+  type PageOrientation,
+} from '@core/api/pageOrientation';
 
 const { width } = Dimensions.get('window');
-const CONTENT_WIDTH = width - spacing.xl * 2;
 const SPINE_WIDTH = 3;
-const PAGE_WIDTH = (CONTENT_WIDTH - SPINE_WIDTH) / 2;
-const PAGE_HEIGHT = PAGE_WIDTH * 1.48;
 const PHOTO_GAP = 8;
 const PAGE_PADDING = 14;
 
@@ -28,15 +29,19 @@ interface OpenBookSpreadProps {
   activePageIndex: number;
   onPhotoPress: (pageIndex: number, photoIndex: number) => void;
   onEmptyPagePress?: (pageIndex: number) => void;
+  orientation?: PageOrientation;
 }
 
-const COVER_WIDTH = width * 0.52;
-const COVER_HEIGHT = COVER_WIDTH * 1.38;
+const VERTICAL_METRICS = getEditorBookMetrics('vertical');
+const PAGE_WIDTH = VERTICAL_METRICS.pageW;
+const PAGE_HEIGHT = VERTICAL_METRICS.pageH;
+const CONTENT_WIDTH = VERTICAL_METRICS.contentWidth;
 
 interface ClosedBookCoverProps {
   page?: PageData;
   fallbackCoverPhoto?: string;
   onPhotoPress?: () => void;
+  orientation?: PageOrientation;
 }
 
 /** Portada: libro cerrado (una sola tapa), como Figma. */
@@ -44,13 +49,15 @@ export function ClosedBookCover({
   page,
   fallbackCoverPhoto,
   onPhotoPress,
+  orientation = 'vertical',
 }: ClosedBookCoverProps) {
   const coverPhoto = page?.photos[0]?.uri || fallbackCoverPhoto;
   const textContent = page?.text.content || '';
+  const { coverW, coverH } = getEditorBookMetrics(orientation, width);
 
   return (
     <View style={styles.coverContainer}>
-      <View style={styles.closedBook}>
+      <View style={[styles.closedBook, { width: coverW, height: coverH }]}>
         <LinearGradient
           colors={['#C5D9E8', '#A8C4D9', '#8FB0C9']}
           locations={[0, 0.45, 1]}
@@ -63,7 +70,14 @@ export function ClosedBookCover({
           end={{ x: 1, y: 0.5 }}
           style={styles.coverSpineEdge}
         />
-        <View style={styles.closedBookInner}>
+        <View
+          style={[
+            styles.closedBookInner,
+            {
+              paddingTop: coverH * 0.14,
+              paddingBottom: coverH * 0.16,
+            },
+          ]}>
           <TouchableOpacity
             style={styles.closedCoverPhotoFrame}
             onPress={onPhotoPress}
@@ -232,6 +246,8 @@ function BookPage({
   side,
   isActive,
   blank,
+  pageW,
+  pageH,
   onPhotoPress,
   onEmptyPagePress,
 }: {
@@ -241,6 +257,8 @@ function BookPage({
   isActive: boolean;
   /** Endpaper / unpaired side — no empty CTA, no selection chrome */
   blank?: boolean;
+  pageW: number;
+  pageH: number;
   onPhotoPress: (pageIndex: number, photoIndex: number) => void;
   onEmptyPagePress?: (pageIndex: number) => void;
 }) {
@@ -248,6 +266,7 @@ function BookPage({
     <View
       style={[
         styles.bookPage,
+        { width: pageW, height: pageH },
         side === 'left' ? styles.bookPageLeft : styles.bookPageRight,
         side === 'left' ? styles.bookPageShadowLeft : styles.bookPageShadowRight,
         isActive && !blank && styles.bookPageActive,
@@ -272,8 +291,10 @@ export function OpenBookSpread({
   activePageIndex,
   onPhotoPress,
   onEmptyPagePress,
+  orientation = 'vertical',
 }: OpenBookSpreadProps) {
   const hasRightPage = rightPageIndex > leftPageIndex && rightPage != null;
+  const { pageW, pageH } = getEditorBookMetrics(orientation, width);
 
   return (
     <View style={styles.spreadContainer}>
@@ -283,6 +304,8 @@ export function OpenBookSpread({
           pageIndex={leftPageIndex}
           side="left"
           isActive={activePageIndex === leftPageIndex}
+          pageW={pageW}
+          pageH={pageH}
           onPhotoPress={onPhotoPress}
           onEmptyPagePress={onEmptyPagePress}
         />
@@ -297,6 +320,8 @@ export function OpenBookSpread({
           side="right"
           isActive={hasRightPage && activePageIndex === rightPageIndex}
           blank={!hasRightPage}
+          pageW={pageW}
+          pageH={pageH}
           onPhotoPress={onPhotoPress}
           onEmptyPagePress={onEmptyPagePress}
         />
@@ -316,8 +341,6 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.md,
   },
   closedBook: {
-    width: COVER_WIDTH,
-    height: COVER_HEIGHT,
     borderRadius: 6,
     overflow: 'hidden',
     shadowColor: '#000',
@@ -339,8 +362,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     paddingHorizontal: spacing.lg,
-    paddingTop: COVER_HEIGHT * 0.14,
-    paddingBottom: COVER_HEIGHT * 0.16,
     gap: spacing.lg,
   },
   closedCoverPhotoFrame: {
@@ -405,8 +426,6 @@ const styles = StyleSheet.create({
     alignSelf: 'stretch',
   },
   bookPage: {
-    width: PAGE_WIDTH,
-    height: PAGE_HEIGHT,
     backgroundColor: '#FFFFFF',
     borderWidth: 1,
     borderColor: 'rgba(0, 0, 0, 0.05)',

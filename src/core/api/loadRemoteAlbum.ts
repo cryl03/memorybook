@@ -11,6 +11,7 @@ import {
 import { redistributePagesWithDesign, ensureAllPhotosOnPages } from '@features/editor/utils';
 import type { LayoutType, PageData } from '@features/editor/types';
 import { fromEstiloDefault } from './estilo';
+import { resolvePageOrientation } from './pageOrientation';
 import { albumIdsEqual } from './albumId';
 import { extractPdfUrl, resolveMediaUrl } from './pdfUrl';
 import { clearCachedPdf } from './pdfCache';
@@ -80,6 +81,12 @@ export async function loadRemoteAlbumForEditor(
   );
   // API `n_paginas` = Diseño 1–4 (NOT page count)
   const fotosPorPagina = resolveFotosPorPaginaValue(album.n_paginas);
+  const pageOrientation = await resolvePageOrientation({
+    estiloDefault:
+      typeof album.estilo_default === 'string' ? album.estilo_default : null,
+    story: estiloStory,
+    style,
+  });
 
   const savedCoverText =
     (await loadCoverText(albumId)) ||
@@ -137,6 +144,7 @@ export async function loadRemoteAlbumForEditor(
       pdfUrl: album.pdf
         ? resolveMediaUrl(album.pdf)
         : extractPdfUrl(album) ?? undefined,
+      pageOrientation,
     }),
   );
 }
@@ -169,6 +177,12 @@ export async function openRemoteAlbumForPreview(
     typeof album.estilo_default === 'string' ? album.estilo_default : null,
   );
   const fotosPorPagina = resolveFotosPorPaginaValue(album.n_paginas);
+  const pageOrientation = await resolvePageOrientation({
+    estiloDefault:
+      typeof album.estilo_default === 'string' ? album.estilo_default : null,
+    story: estiloStory,
+    style,
+  });
   const pageCount =
     typeof album.paginas_total === 'number' && album.paginas_total > 0
       ? album.paginas_total
@@ -192,6 +206,7 @@ export async function openRemoteAlbumForPreview(
       pdfUrl: album.pdf
         ? resolveMediaUrl(album.pdf)
         : `preview:${remoteId}:${Date.now()}`,
+      pageOrientation,
     }),
   );
 }

@@ -18,6 +18,8 @@ export interface AlbumState {
     remoteFotos?: Record<string, string>;
     /** URL of generated album PDF (`POST /album/:id/pdf/`) */
     pdfUrl?: string;
+    /** From style-definitions `page_orientation` */
+    pageOrientation?: 'horizontal' | 'vertical';
   } | null;
   isCreating: boolean;
   syncError: string | null;
@@ -149,6 +151,14 @@ const albumSlice = createSlice({
         state.currentAlbum.pdfUrl = action.payload;
       }
     },
+    setPageOrientation(
+      state,
+      action: PayloadAction<'horizontal' | 'vertical'>,
+    ) {
+      if (state.currentAlbum) {
+        state.currentAlbum.pageOrientation = action.payload;
+      }
+    },
     setSyncError(state, action: PayloadAction<string | null>) {
       state.syncError = action.payload;
     },
@@ -172,6 +182,7 @@ const albumSlice = createSlice({
         remoteId: string;
         remoteFotos?: Record<string, string>;
         pdfUrl?: string;
+        pageOrientation?: 'horizontal' | 'vertical';
       }>,
     ) {
       state.currentAlbum = {
@@ -219,6 +230,7 @@ export const {
   setRemoteFotos,
   mergeRemoteFotos,
   setPdfUrl,
+  setPageOrientation,
   setSyncError,
   loadFromRemote,
   resetAlbum,

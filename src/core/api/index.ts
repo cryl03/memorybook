@@ -17,6 +17,13 @@ export {
   resolveFotosPorPagina,
   pickStyleDesign,
 } from './estilo';
+export {
+  parsePageOrientation,
+  resolvePageOrientation,
+  getAlbumBookMetrics,
+  getEditorBookMetrics,
+} from './pageOrientation';
+export type { PageOrientation } from './pageOrientation';
 export { normalizeAlbumId, albumIdsEqual } from './albumId';
 
 export const memoraApi = {

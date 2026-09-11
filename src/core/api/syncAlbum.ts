@@ -7,6 +7,7 @@ import {
   toToneId,
 } from './estilo';
 import type { Album, AlbumEstilo, Foto, FotosPorPagina, StyleDefinition } from './types';
+import { parsePageOrientation, type PageOrientation } from './pageOrientation';
 
 export interface SyncAlbumOptions {
   title: string;
@@ -25,6 +26,7 @@ export interface SyncAlbumResult {
   uploadedCount: number;
   remoteFotos: Record<string, string>;
   pdfUrl?: string;
+  pageOrientation?: PageOrientation;
 }
 
 /** One create per album. Survives CreatingScreen remount. Cleared on resetAlbum. */
@@ -217,6 +219,7 @@ export async function syncAlbumToApi({
       uploadedCount: uploaded.length,
       remoteFotos,
       pdfUrl,
+      pageOrientation: parsePageOrientation(styleDef?.page_orientation),
     };
   })();
 

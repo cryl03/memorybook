@@ -18,6 +18,7 @@ import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { Button } from '@shared/components';
 import { useAppDispatch, useAppSelector } from '@core/store/hooks';
+import { useAlbumPageOrientation } from '@core/store/useAlbumPageOrientation';
 import { store } from '@core/store';
 import {
   removePhoto,
@@ -80,6 +81,7 @@ export function EditorScreen({
 }: EditorScreenProps) {
   const dispatch = useAppDispatch();
   const album = useAppSelector(state => state.album);
+  const pageOrientation = useAlbumPageOrientation();
   const photos = album.currentAlbum?.photos ?? EMPTY_PHOTOS;
   const pagesInitializedRef = useRef(false);
 
@@ -519,6 +521,7 @@ export function EditorScreen({
               page={pages[0]}
               fallbackCoverPhoto={photos[0]}
               onPhotoPress={() => openPhotoActions(0)}
+              orientation={pageOrientation}
             />
           );
         }
@@ -538,6 +541,7 @@ export function EditorScreen({
             activePageIndex={pageIndex}
             onPhotoPress={handleSpreadPhotoPress}
             onEmptyPagePress={handleEmptyPagePress}
+            orientation={pageOrientation}
           />
         );
       }}

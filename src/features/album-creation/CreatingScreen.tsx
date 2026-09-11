@@ -4,7 +4,7 @@ import LinearGradient from 'react-native-linear-gradient';
 import { colors, typography, spacing } from '@core/theme';
 import { botImage } from '@core/assets/images';
 import { useAppDispatch, useAppSelector } from '@core/store/hooks';
-import { setRemoteAlbumId, setSyncError, mergeRemoteFotos, setPdfUrl } from '@core/store/slices/albumSlice';
+import { setRemoteAlbumId, setSyncError, mergeRemoteFotos, setPdfUrl, setPageOrientation } from '@core/store/slices/albumSlice';
 import { store } from '@core/store';
 import { syncAlbumToApi, getLastSyncAlbumResult } from '@core/api/syncAlbum';
 import { getErrorMessage } from '@core/api/errors';
@@ -105,6 +105,9 @@ export function CreatingScreen({ onComplete }: CreatingScreenProps) {
           if (prior.pdfUrl) {
             dispatch(setPdfUrl(prior.pdfUrl));
           }
+          if (prior.pageOrientation) {
+            dispatch(setPageOrientation(prior.pageOrientation));
+          }
         } else if (!isAuthenticated && !ALLOW_GUEST_FLOW) {
           dispatch(
             setSyncError('Inicia sesión para crear el álbum en la nube'),
@@ -140,6 +143,9 @@ export function CreatingScreen({ onComplete }: CreatingScreenProps) {
             }
             if (result.pdfUrl) {
               dispatch(setPdfUrl(result.pdfUrl));
+            }
+            if (result.pageOrientation) {
+              dispatch(setPageOrientation(result.pageOrientation));
             }
             dispatch(setSyncError(null));
           }

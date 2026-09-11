@@ -4,6 +4,8 @@ import LinearGradient from 'react-native-linear-gradient';
 import { icons } from '@core/assets/icons';
 import { colors, typography, spacing, borderRadius } from '@core/theme';
 import { useAppSelector } from '@core/store/hooks';
+import { useAlbumPageOrientation } from '@core/store/useAlbumPageOrientation';
+import { getAlbumBookMetrics } from '@core/api/pageOrientation';
 import {
   AlbumPdfFlipbook,
   type AlbumPdfFlipbookHandle,
@@ -12,9 +14,6 @@ import { BookSpreadCurl, buildAlbumViews } from './BookSpreadCurl';
 import type { BookPageCurlHandle } from '../editor/components/BookPageCurl';
 
 const { width } = Dimensions.get('window');
-const OPEN_W = width * 0.92;
-const PAGE_W = OPEN_W / 2;
-const OPEN_H = PAGE_W * 1.38;
 
 interface WowScreenProps {
   albumTitle: string;
@@ -35,6 +34,8 @@ export function WowScreen({
 }: WowScreenProps) {
   const [isSaving, setIsSaving] = React.useState(false);
   const album = useAppSelector(state => state.album);
+  const orientation = useAlbumPageOrientation();
+  const book = getAlbumBookMetrics(orientation, width);
   const isAuthenticated = useAppSelector(state => state.auth.isAuthenticated);
   const photos = album.currentAlbum?.photos || [];
   const coverPhoto = photos[0] || null;
@@ -108,7 +109,9 @@ export function WowScreen({
           <View
             style={[
               styles.bookClip,
-              bookOpen ? styles.bookClipOpen : styles.bookClipClosed,
+              bookOpen
+                ? { width: book.openW, height: book.openH }
+                : { width: book.pageW, height: book.pageH },
             ]}>
             <View style={styles.bookInner}>
               <AlbumPdfFlipbook
@@ -139,7 +142,9 @@ export function WowScreen({
           <View
             style={[
               styles.bookClip,
-              bookOpen ? styles.bookClipOpen : styles.bookClipClosed,
+              bookOpen
+                ? { width: book.openW, height: book.openH }
+                : { width: book.pageW, height: book.pageH },
             ]}>
             <View style={styles.bookInner}>
               <BookSpreadCurl
@@ -157,7 +162,10 @@ export function WowScreen({
             </View>
           </View>
         ) : (
-          <View style={styles.bookCover}>
+          <View style={[
+            styles.bookCover,
+            { width: book.coverW, height: book.coverH },
+          ]}>
             <View style={styles.bookPhotoFrame}>
               {coverUri ? (
                 <Image
@@ -300,8 +308,6 @@ const styles = StyleSheet.create({
     marginBottom: spacing['3xl'],
   },
   bookCover: {
-    width: width * 0.78,
-    height: width * 1.05,
     borderRadius: borderRadius.sm,
     backgroundColor: '#A8C4D9',
     alignItems: 'center',
@@ -322,14 +328,6 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.12,
     shadowRadius: 12,
     elevation: 8,
-  },
-  bookClipClosed: {
-    width: PAGE_W,
-    height: OPEN_H,
-  },
-  bookClipOpen: {
-    width: OPEN_W,
-    height: OPEN_H,
   },
   bookInner: {
     width: '100%',
