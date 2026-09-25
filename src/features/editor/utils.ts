@@ -116,7 +116,8 @@ export function getMaxPhotosForLayout(layout: LayoutType): number {
 }
 
 /**
- * Redistributes album photos using fixed slots-per-page (Diseño 1–4).
+ * Redistributes album photos using the diseño slot count
+ * (`designs[].capacity`), not the design code.
  * Preserves cover page (index 0 / id page-cover).
  */
 export function redistributePagesWithDesign(

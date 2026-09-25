@@ -6,12 +6,11 @@ import type { Foto, FotosPorPagina, UploadFotoPayload } from '../types';
 export type UploadFotosOptions = {
   descripcion?: string | null;
   texto?: string | null;
-  /** style-definitions.designs[].capacity */
+  /** API `capacidad_fotos` = designs[].code */
   capacidadFotos?: FotosPorPagina | number | null;
+  /** designs[].capacity. Each POST sends this many photos so a page fills. */
+  slotsPorPagina?: number | null;
 };
-
-/** Postman create uses 3 files per POST. */
-const UPLOAD_CHUNK_SIZE = 3;
 
 function fileMeta(uri: string, index: number): { fileName: string; mimeType: string } {
   const path = uri.split('?')[0] ?? uri;
@@ -52,7 +51,7 @@ function filePart(
 
 /**
  * Postman: `imagen` (1 file) or `imagenes` (lote).
- * `capacidad_fotos` = diseño 1–4 — backend asigna fotos a páginas.
+ * `capacidad_fotos` = código de diseño. El API rechaza la capacidad (huecos).
  */
 function buildAlbumFotosFormData(
   photoUris: string[],
@@ -256,7 +255,8 @@ async function uploadChunkOneByOne(
 }
 
 /**
- * Nested `POST /album/:id/fotos/` in chunks of 3 (Postman).
+ * POST `/album/:id/fotos/` in groups of `slotsPorPagina` (design capacity).
+ * A new POST starts a new page, so the group size must match the slot count.
  * Never `POST /fotos/` — that path leaves `asignada: false` and PDF vacío.
  */
 export async function uploadFotos(
@@ -273,10 +273,16 @@ export async function uploadFotos(
     sample: photoUris[0]?.slice(0, 96),
   });
 
+  const slots = options?.slotsPorPagina;
+  const chunkSize =
+    typeof slots === 'number' && slots >= 1
+      ? Math.floor(slots)
+      : photoUris.length;
+
   const all: Foto[] = [];
 
-  for (let i = 0; i < photoUris.length; i += UPLOAD_CHUNK_SIZE) {
-    const chunk = photoUris.slice(i, i + UPLOAD_CHUNK_SIZE);
+  for (let i = 0; i < photoUris.length; i += chunkSize) {
+    const chunk = photoUris.slice(i, i + chunkSize);
     try {
       const fotos = await uploadAlbumFotos(albumId, chunk, options);
       all.push(...fotos);

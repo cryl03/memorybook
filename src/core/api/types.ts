@@ -45,7 +45,7 @@ export type AlbumEstilo =
   | 'special_espontaneo'
   | 'special_clasico';
 
-/** Upload `capacidad_fotos` — from style-definitions.designs[].capacity (1–6) */
+/** Design code (`designs[].code` / API `n_paginas`). Not the slot count. */
 export type FotosPorPagina = number;
 
 /** @deprecated alias — same as FotosPorPagina / API `n_paginas` design */
@@ -58,7 +58,7 @@ export interface Foto {
   imagen?: string;
   descripcion?: string | null;
   texto?: string | null;
-  /** Upload FormData `capacidad_fotos` — design.capacity */
+  /** Upload FormData `capacidad_fotos` — designs[].code */
   capacidad_fotos?: FotosPorPagina | number | null;
   asignada?: boolean;
   fecha_creacion?: string;
@@ -122,7 +122,7 @@ export interface UploadFotoPayload {
   uri: string;
   descripcion?: string | null;
   texto?: string | null;
-  /** Upload FormData `capacidad_fotos` = design.capacity, not n_paginas */
+  /** Upload FormData `capacidad_fotos` = designs[].code, same as album `n_paginas` */
   capacidad_fotos?: FotosPorPagina | number | null;
   fileName?: string;
   mimeType?: string;
@@ -150,6 +150,11 @@ export interface SubmitStyleSelectorPayload {
   album_id: string;
   story_id: string;
   tone_id: string;
+}
+
+/** POST `/album/:id/diseno/instruccion/` */
+export interface DisenoInstruccionPayload {
+  instruccion: string;
 }
 
 /** GET `/album/style-definitions/:code` */

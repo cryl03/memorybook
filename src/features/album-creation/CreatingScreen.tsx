@@ -126,6 +126,8 @@ export function CreatingScreen({ onComplete }: CreatingScreenProps) {
             story: live?.story ?? snapshot?.story,
             style: live?.style ?? snapshot?.style,
             fotosPorPagina: live?.fotosPorPagina ?? snapshot?.fotosPorPagina,
+            instruccion:
+              live?.disenoInstruccion ?? snapshot?.disenoInstruccion,
             onProgress: (step, value) => {
               if (!cancelled) {
                 setStatusText(step);

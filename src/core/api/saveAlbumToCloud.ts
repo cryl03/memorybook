@@ -71,6 +71,7 @@ export async function saveAlbumToCloud(
           style: current.style,
           onboardingStory: current.story,
           fotosPorPagina: current.fotosPorPagina,
+          instruccion: current.disenoInstruccion,
           onProgress,
         });
 

@@ -28,7 +28,7 @@ import {
   setCoverText,
   setFotosPorPagina,
 } from '@core/store/slices/albumSlice';
-import { deleteRemotePhoto } from '@core/api';
+import { deleteRemotePhoto, albumService, toEstiloDefault, uploadPlanForDesign } from '@core/api';
 import { getErrorMessage } from '@core/api/errors';
 import { PhotoActionSheet } from './components/PhotoActionSheet';
 import { LayoutSelector } from './components/LayoutSelector';
@@ -288,9 +288,25 @@ export function EditorScreen({
   const handleSelectDesign = useCallback(
     (design: DisenoPagina) => {
       dispatch(setFotosPorPagina(design));
-      const next = redistributePagesWithDesign(pages, photos, design);
-      setPages(next);
-      setCurrentPage(page => Math.min(page, Math.max(0, next.length - 1)));
+      const current = store.getState().album.currentAlbum;
+      const estilo =
+        current?.story || current?.style
+          ? toEstiloDefault(current.story ?? '', current.style || 'sutil')
+          : undefined;
+      void (async () => {
+        let slots: number = design;
+        if (estilo) {
+          try {
+            const definition = await albumService.getStyleDefinitions(estilo);
+            slots = uploadPlanForDesign(definition, design).slots;
+          } catch (error) {
+            console.warn('[ESTILO] style-definitions failed', error);
+          }
+        }
+        const next = redistributePagesWithDesign(pages, photos, slots);
+        setPages(next);
+        setCurrentPage(page => Math.min(page, Math.max(0, next.length - 1)));
+      })();
     },
     [dispatch, pages, photos],
   );

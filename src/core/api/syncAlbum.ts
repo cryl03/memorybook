@@ -1,10 +1,10 @@
 import { albumService, fotoService } from '@core/api';
 import {
-  pickStyleDesign,
   toEstiloDefault,
   toNPaginasDiseno,
   toStoryId,
   toToneId,
+  uploadPlanForDesign,
 } from './estilo';
 import type { Album, AlbumEstilo, Foto, FotosPorPagina, StyleDefinition } from './types';
 import { parsePageOrientation, type PageOrientation } from './pageOrientation';
@@ -16,8 +16,10 @@ export interface SyncAlbumOptions {
   story?: string;
   style?: string;
   estiloDefault?: AlbumEstilo | string;
-  /** Diseño 1–4 → API `n_paginas` + upload `capacidad_fotos` */
+  /** Diseño 1–4 → API `n_paginas`. Upload `capacidad_fotos` uses the same code. */
   fotosPorPagina?: FotosPorPagina | number;
+  /** Texto libre para POST /diseno/instruccion/ tras subir fotos. */
+  instruccion?: string;
   onProgress?: (step: string, progress: number) => void;
 }
 
@@ -76,6 +78,7 @@ export async function syncAlbumToApi({
   style,
   estiloDefault,
   fotosPorPagina,
+  instruccion,
   onProgress,
 }: SyncAlbumOptions): Promise<SyncAlbumResult> {
   if (lastCreate) {
@@ -93,19 +96,19 @@ export async function syncAlbumToApi({
       (story || style ? toEstiloDefault(story ?? '', style ?? 'sutil') : undefined);
 
     let designCode = toNPaginasDiseno(fotosPorPagina);
-    let capacidad = 1;
+    let slots = designCode;
     let styleDef: StyleDefinition | null = null;
 
     if (estilo) {
       try {
         styleDef = await albumService.getStyleDefinitions(estilo);
-        const design = pickStyleDesign(styleDef, fotosPorPagina);
-        designCode = design.code;
-        capacidad = design.capacity;
+        const plan = uploadPlanForDesign(styleDef, fotosPorPagina);
+        designCode = plan.code;
+        slots = plan.slots;
         console.log('[ESTILO] style-definitions', {
           code: styleDef.code,
-          design: design.code,
-          capacity: design.capacity,
+          design: plan.code,
+          slots: plan.slots,
           orientation: styleDef.page_orientation,
         });
       } catch (error) {
@@ -163,7 +166,8 @@ export async function syncAlbumToApi({
         onProgress?.(`Subiendo fotos (${uploaded}/${total})`, uploadProgress);
       },
       {
-        capacidadFotos: capacidad,
+        capacidadFotos: designCode,
+        slotsPorPagina: slots,
         descripcion: description ?? null,
         texto: description ?? null,
       },
@@ -196,6 +200,16 @@ export async function syncAlbumToApi({
 
     if (listed.length === 0 && fotos.length === 0) {
       throw new Error('Las fotos no se subieron al álbum');
+    }
+
+    const instruccionText = instruccion?.trim();
+    if (instruccionText) {
+      onProgress?.('Ajustando diseño', 0.86);
+      try {
+        await albumService.submitDisenoInstruccion(albumId, instruccionText);
+      } catch (error) {
+        console.warn('[DISENO] instruccion failed', error);
+      }
     }
 
     onProgress?.('Generando álbum', 0.88);

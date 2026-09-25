@@ -1,5 +1,5 @@
 import { albumService, fotoService } from '@core/api';
-import { pickStyleDesign, toEstiloDefault, toNPaginasDiseno } from './estilo';
+import { toEstiloDefault, toNPaginasDiseno, uploadPlanForDesign } from './estilo';
 import type { AlbumEstilo, FotosPorPagina, UpdateAlbumPayload } from './types';
 
 export async function syncAlbumMetadata(
@@ -45,6 +45,7 @@ export async function uploadMissingPhotos(
   remoteFotos: Record<string, string> = {},
   onProgress?: (step: string, progress: number) => void,
   capacidadFotos?: FotosPorPagina | number,
+  slotsPorPagina?: number,
 ): Promise<Record<string, string>> {
   const missingUris = photoUris.filter(uri => !remoteFotos[uri]);
   if (missingUris.length === 0) return remoteFotos;
@@ -58,7 +59,7 @@ export async function uploadMissingPhotos(
       const uploadProgress = 0.15 + (uploadedCount / total) * 0.85;
       onProgress?.(`Subiendo fotos (${uploadedCount}/${total})`, uploadProgress);
     },
-    { capacidadFotos },
+    { capacidadFotos, slotsPorPagina },
   );
   const updated = { ...remoteFotos };
 
@@ -87,6 +88,8 @@ export async function syncAlbumToCloud(options: {
   estiloDefault?: AlbumEstilo | string;
   /** Diseño 1–4 */
   fotosPorPagina?: FotosPorPagina | number;
+  /** Texto libre para POST /diseno/instruccion/ tras subir fotos. */
+  instruccion?: string;
   onProgress?: (step: string, progress: number) => void;
 }): Promise<{ remoteFotos: Record<string, string>; pdfUrl?: string }> {
   options.onProgress?.('Actualizando álbum', 0.05);
@@ -99,7 +102,8 @@ export async function syncAlbumToCloud(options: {
 
   const previous = options.remoteFotos ?? {};
 
-  let capacidad: FotosPorPagina | undefined = options.fotosPorPagina;
+  let designCode = toNPaginasDiseno(options.fotosPorPagina);
+  let slots = designCode;
   const estiloCode =
     options.estiloDefault ??
     (options.onboardingStory || options.style
@@ -108,8 +112,9 @@ export async function syncAlbumToCloud(options: {
   if (estiloCode) {
     try {
       const definition = await albumService.getStyleDefinitions(estiloCode);
-      const design = pickStyleDesign(definition, options.fotosPorPagina);
-      capacidad = design.capacity;
+      const plan = uploadPlanForDesign(definition, options.fotosPorPagina);
+      designCode = plan.code;
+      slots = plan.slots;
     } catch (error) {
       console.warn('[ESTILO] style-definitions failed', error);
     }
@@ -120,8 +125,19 @@ export async function syncAlbumToCloud(options: {
     options.photoUris,
     previous,
     options.onProgress,
-    capacidad,
+    designCode,
+    slots,
   );
+
+  const instruccionText = options.instruccion?.trim();
+  if (instruccionText) {
+    options.onProgress?.('Ajustando diseño', 0.88);
+    try {
+      await albumService.submitDisenoInstruccion(options.remoteId, instruccionText);
+    } catch (error) {
+      console.warn('[DISENO] instruccion failed', error);
+    }
+  }
 
   options.onProgress?.('Generando álbum', 0.9);
   const pdf = await albumService.generateAlbumPdf(options.remoteId);

@@ -7,6 +7,7 @@ export type RootStackParamList = {
   OnboardingChat: { skipIntro?: boolean; nameOnly?: boolean } | undefined;
   PhotoCount: { albumTitle?: string } | undefined;
   PhotoSelector: { maxPhotos: number; existingPhotos?: string[]; returnTo?: 'Wow' | 'Editor' };
+  DesignInstruction: undefined;
   Creating: undefined;
   Wow: undefined;
   Editor: undefined;

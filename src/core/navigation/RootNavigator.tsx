@@ -10,6 +10,8 @@ import {
   setAlbumConfig,
   setPhotos,
   appendPhotos,
+  setDisenoInstruccion,
+  setFotosPorPagina,
   startCreation,
   finishCreation,
   repairAlbum,
@@ -33,6 +35,7 @@ import {
 } from '@features/onboarding/OnboardingChatScreen';
 import { PhotoCountScreen } from '@features/album-creation/PhotoCountScreen';
 import { PhotoSelectorScreen } from '@features/album-creation/PhotoSelectorScreen';
+import { DesignInstructionScreen } from '@features/album-creation/DesignInstructionScreen';
 import { CreatingScreen } from '@features/album-creation/CreatingScreen';
 import { WowScreen } from '@features/album-creation/WowScreen';
 import { EditorScreen } from '@features/editor/EditorScreen';
@@ -475,10 +478,27 @@ export function RootNavigator() {
                 }
 
                 dispatch(setPhotos(photos));
+                navigation.navigate('DesignInstruction');
+              }}
+              onClose={() => navigation.goBack()}
+            />
+          )}
+        </Stack.Screen>
+
+        <Stack.Screen name="DesignInstruction">
+          {({ navigation }) => (
+            <DesignInstructionScreen
+              story={album.currentAlbum?.story}
+              style={album.currentAlbum?.style}
+              initialText={album.currentAlbum?.disenoInstruccion}
+              onBack={() => navigation.goBack()}
+              initialDesign={album.currentAlbum?.fotosPorPagina}
+              onContinue={(instruccion: string, designCode: number) => {
+                dispatch(setDisenoInstruccion(instruccion));
+                dispatch(setFotosPorPagina(designCode));
                 dispatch(startCreation());
                 navigation.navigate('Creating');
               }}
-              onClose={() => navigation.goBack()}
             />
           )}
         </Stack.Screen>

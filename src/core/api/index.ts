@@ -16,6 +16,8 @@ export {
   toNPaginasDiseno,
   resolveFotosPorPagina,
   pickStyleDesign,
+  uploadPlanForDesign,
+  defaultDisenoInstruccion,
 } from './estilo';
 export {
   parsePageOrientation,

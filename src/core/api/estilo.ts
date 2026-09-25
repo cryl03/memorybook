@@ -72,6 +72,26 @@ export function toFotosPorPagina(design?: number | null): FotosPorPagina {
   return toCapacidadFotos(design);
 }
 
+/**
+ * Upload plan for one diseño.
+ * API `capacidad_fotos` and album `n_paginas` are `designs[].code`.
+ * `slots` is `designs[].capacity` — photos per page, used only to size each POST.
+ */
+export function uploadPlanForDesign(
+  definition: StyleDefinition | null | undefined,
+  designCode?: number | null,
+): { code: number; slots: number } {
+  if (!definition) {
+    const code = toNPaginasDiseno(designCode);
+    return { code, slots: code };
+  }
+  const design = pickStyleDesign(definition, designCode);
+  return {
+    code: design.code,
+    slots: Math.max(1, Math.floor(design.capacity) || 1),
+  };
+}
+
 export function pickStyleDesign(
   definition: StyleDefinition,
   designCode?: number | null,
@@ -85,6 +105,35 @@ export function pickStyleDesign(
       capacity: 1,
     }
   );
+}
+
+const STORY_PHRASE: Record<string, string> = {
+  viaje: 'un viaje',
+  familia: 'la familia',
+  cotidianos: 'los momentos cotidianos',
+  special: 'un momento especial',
+  pareja: 'la pareja',
+  amigos: 'los amigos',
+  mascota: 'la mascota',
+};
+
+const TONE_PHRASE: Record<string, string> = {
+  sutil: 'un tono sutil, fondo claro y suave',
+  elegante: 'un tono elegante, fondo limpio y texto oscuro',
+  espontaneo: 'un tono espontáneo, fondo cálido y composición suelta',
+  clasico: 'un tono clásico, fondo neutro y texto sobrio',
+};
+
+/** Borrador de POST diseno/instruccion según historia y tono. El usuario lo edita. */
+export function defaultDisenoInstruccion(story?: string, style?: string): string {
+  const storyKey = (story ?? '').trim().toLowerCase();
+  const storyId = toStoryId(story ?? '');
+  const toneId = toToneId(style ?? '');
+  const storyPhrase = storyKey
+    ? (STORY_PHRASE[storyKey] ?? STORY_PHRASE[storyId] ?? 'esta historia')
+    : 'esta historia';
+  const tonePhrase = TONE_PHRASE[toneId] ?? 'un tono suave y un fondo limpio';
+  return `Ajusta un poco el diseño y el fondo para ${storyPhrase}, con ${tonePhrase}. Conserva las fotos.`;
 }
 
 /** Prefer explicit design code; else 1. */

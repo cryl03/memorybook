@@ -79,16 +79,19 @@ export function PhotoGrid({
           </View>
         );
 
-      case 'grid-4':
+      case 'grid-4': {
+        const count = Math.max(photos.length, 4);
+        const photoStyle = count > 4 ? styles.gridManyPhoto : styles.grid4Photo;
         return (
           <View style={styles.grid4Container}>
-            {[0, 1, 2, 3].map(i =>
+            {Array.from({ length: count }, (_, i) =>
               photos[i]
-                ? renderPhoto(photos[i], i, styles.grid4Photo)
-                : renderEmpty(styles.grid4Photo, i),
+                ? renderPhoto(photos[i], i, photoStyle)
+                : renderEmpty(photoStyle, i),
             )}
           </View>
         );
+      }
 
       case 'collage':
         return (
@@ -178,6 +181,11 @@ const styles = StyleSheet.create({
     ...photoBase,
     width: (GRID_WIDTH - spacing.sm) / 2,
     height: (GRID_WIDTH - spacing.sm) / 2,
+  },
+  gridManyPhoto: {
+    ...photoBase,
+    width: (GRID_WIDTH - spacing.sm * 2) / 3,
+    height: (GRID_WIDTH - spacing.sm * 2) / 3,
   },
   // Collage — Diseño 3: 1 grande izq + 2 apiladas der (columnas 50/50)
   collageContainer: {

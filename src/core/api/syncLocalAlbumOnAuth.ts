@@ -60,6 +60,7 @@ export async function syncLocalAlbumOnAuth(
         style: current.style,
         onboardingStory: current.story,
         fotosPorPagina: current.fotosPorPagina,
+        instruccion: current.disenoInstruccion,
         onProgress,
       });
 
@@ -80,6 +81,7 @@ export async function syncLocalAlbumOnAuth(
       story: current.story,
       style: current.style,
       fotosPorPagina: current.fotosPorPagina,
+      instruccion: current.disenoInstruccion,
       onProgress,
     });
 

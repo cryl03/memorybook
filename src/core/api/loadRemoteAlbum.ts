@@ -10,7 +10,7 @@ import {
 } from '@features/editor/storage';
 import { redistributePagesWithDesign, ensureAllPhotosOnPages } from '@features/editor/utils';
 import type { LayoutType, PageData } from '@features/editor/types';
-import { fromEstiloDefault } from './estilo';
+import { fromEstiloDefault, uploadPlanForDesign } from './estilo';
 import { resolvePageOrientation } from './pageOrientation';
 import { albumIdsEqual } from './albumId';
 import { extractPdfUrl, resolveMediaUrl } from './pdfUrl';
@@ -24,6 +24,20 @@ function resolveFotosPorPaginaValue(
 ): number {
   if (typeof value === 'number' && value >= 1 && value <= 4) return value;
   return 1;
+}
+
+async function slotsForDesign(
+  estilo: string | null | undefined,
+  designCode: number,
+): Promise<number> {
+  if (!estilo) return designCode;
+  try {
+    const definition = await albumService.getStyleDefinitions(estilo);
+    return uploadPlanForDesign(definition, designCode).slots;
+  } catch (error) {
+    console.warn('[ESTILO] style-definitions failed', error);
+    return designCode;
+  }
 }
 
 async function loadFotosForAlbum(
@@ -108,12 +122,16 @@ export async function loadRemoteAlbumForEditor(
   };
 
   const savedPages = await loadAlbumPages(album.unique_id || albumId);
+  const slots = await slotsForDesign(
+    typeof album.estilo_default === 'string' ? album.estilo_default : null,
+    fotosPorPagina,
+  );
   const distributed = savedPages?.length
     ? ensureAllPhotosOnPages(savedPages, photoUris)
     : redistributePagesWithDesign(
         [],
         photoUris,
-        fotosPorPagina,
+        slots,
       ).filter(p => p.id !== 'page-cover');
 
   const pages = savedPages?.length

@@ -337,6 +337,21 @@ export async function submitStyleSelector(
   });
 }
 
+/** POST `/album/:id/diseno/instruccion/` — retoca diseño y fondo tras subir fotos. */
+export async function submitDisenoInstruccion(
+  albumId: string,
+  instruccion: string,
+): Promise<unknown> {
+  const text = instruccion.trim();
+  return apiRequest<unknown>(
+    `/album/${albumPathId(albumId)}/diseno/instruccion/`,
+    {
+      method: 'POST',
+      body: { instruccion: text },
+    },
+  );
+}
+
 /** GET `/album/style-definitions/:code` e.g. viaje_sutil */
 export async function getStyleDefinitions(
   code: string,
@@ -361,5 +376,6 @@ export const albumService = {
   fetchAlbumPdfBytes,
   getStyleSelector,
   submitStyleSelector,
+  submitDisenoInstruccion,
   getStyleDefinitions,
 };

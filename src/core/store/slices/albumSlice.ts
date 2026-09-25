@@ -20,6 +20,8 @@ export interface AlbumState {
     pdfUrl?: string;
     /** From style-definitions `page_orientation` */
     pageOrientation?: 'horizontal' | 'vertical';
+    /** Texto editable para POST /diseno/instruccion/. Precargado según historia y tono. */
+    disenoInstruccion?: string;
   } | null;
   isCreating: boolean;
   syncError: string | null;
@@ -55,7 +57,6 @@ const albumSlice = createSlice({
         photos: [],
         style: action.payload.style,
         story: action.payload.story,
-        fotosPorPagina: 1,
       };
     },
     setPhotos(state, action: PayloadAction<string[]>) {
@@ -159,6 +160,11 @@ const albumSlice = createSlice({
         state.currentAlbum.pageOrientation = action.payload;
       }
     },
+    setDisenoInstruccion(state, action: PayloadAction<string>) {
+      if (state.currentAlbum) {
+        state.currentAlbum.disenoInstruccion = action.payload;
+      }
+    },
     setSyncError(state, action: PayloadAction<string | null>) {
       state.syncError = action.payload;
     },
@@ -231,6 +237,7 @@ export const {
   mergeRemoteFotos,
   setPdfUrl,
   setPageOrientation,
+  setDisenoInstruccion,
   setSyncError,
   loadFromRemote,
   resetAlbum,
